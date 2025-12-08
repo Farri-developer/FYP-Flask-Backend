@@ -3,17 +3,45 @@ from database.db import get_db_connection
 
 admin_BP = Blueprint("admin", __name__)
 
-# ---------------- LOGIN ----------------
-@admin_BP.route("", methods=["POST"])
-def getAdmin():
-    data = request.json
-    users = data["users"]
-    passwords = data["passwords"]
 
+# ---------------- LOGIN (ADMIN + STUDENT) ----------------
+@admin_BP.route("", methods=["POST"])
+def login():
+    data = request.json
+    users = data.get("users")        # username / regno
+    passwords = data.get("passwords")
+
+    # ✅ ADMIN LOGIN
     if users == "admin" and passwords == "1234":
-        return jsonify({"success": "Logged in successfully"})
-    else:
-        return jsonify({"error": "Invalid credentials"}), 401
+        return jsonify({
+            "role": "admin",
+            "message": "Admin Login Successfully"
+        })
+
+    # ✅ STUDENT LOGIN (Database)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT sId, Regno, Name
+        FROM Student
+        WHERE Regno = ? AND Password = ?
+    """, (users, passwords))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify({
+            "role": "student",
+            "message": "Login Successfully",
+            "sId": row[0],
+            "Regno": row[1],
+            "Name": row[2]
+        })
+
+    # ❌ INVALID
+    return jsonify({"error": "Invalid Credentials"}), 401
 
 
 # ---------------- Question Screen Admin side ----------------
@@ -112,6 +140,39 @@ def get_question(question_id):
         return jsonify({"error": "Question not found"}), 404
 
 
+# ----------- Get One Unattempted Question For Student -------------
+@admin_BP.route("/GetQuestionByStudent/<int:sid>", methods=["GET"])
+def get_question_for_student(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT TOP 1 q.qid, q.description, q.duration
+        FROM Question q
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM SQStats s
+            WHERE s.qid = q.qid
+              AND s.sid = ?
+        )
+        ORDER BY q.qid
+    """, (sid,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify({
+            "qid": row[0],
+            "description": row[1],
+            "duration": row[2]
+        }), 200
+    else:
+        return jsonify({
+            "message": "No new question available for this student"
+        }), 404
+
+
 
 # ---------------- DELETE Question BY ID (Admin side) ------------
 
@@ -206,5 +267,207 @@ def question_report(question_id):
 
 
 
-# ---------------- STUDENTS Screen Admin side ----------------
+# ---------------- STUDENTS  Admin side ----------------
 
+# GET all students
+@admin_BP.route("GetStudent", methods=["GET"])
+def GetStudent():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT sId, Regno, Name, semester FROM Student")
+    rows = cursor.fetchall()
+
+    students = []
+    for row in rows:
+        students.append({
+            "sId": row[0],
+            "Regno": row[1],
+            "Name": row[2],
+            "semester": row[5]
+        })
+
+    conn.close()
+    return jsonify(students)
+
+
+# ---------------- Insert Student   Admin side ----------------
+
+@admin_BP.route("/studentInsert", methods=["POST"])
+def add_student():
+    data = request.json
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO Student (Regno, Name, Gender, Password, cgpa, semester)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        data["Regno"],
+        data["Name"],
+        data["Gender"],
+        data["Password"],
+        data["cgpa"],
+        data["semester"]
+    ))
+
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Student added successfully"})
+
+
+# ---------------- Update Student   Admin side ----------------
+@admin_BP.route("/studentUpdate/<int:id>", methods=["PUT"])
+def update_student(id):
+    data = request.json
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE Student
+        SET Regno = ?, 
+            Name = ?, 
+            Gender = ?, 
+            Password = ?, 
+            cgpa = ?, 
+            semester = ?
+        WHERE sid = ?
+    """, (
+        data["Regno"],
+        data["Name"],
+        data["Gender"],
+        data["Password"],
+        data["cgpa"],
+        data["semester"],
+        id
+    ))
+
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({"error": "Student not found"}), 404
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Student updated successfully"})
+
+
+# ---------------- Delete Student (Admin side) ----------------
+@admin_BP.route("/studentDelete/<int:id>", methods=["DELETE"])
+def delete_student(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        DELETE FROM Student
+        WHERE sid = ?
+    """, (id,))
+
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({"error": "Student not found"}), 404
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Student deleted successfully"})
+
+
+# ----------- Get all Reports By Student ID -------------
+@admin_BP.route("/studentReports/<int:sid>", methods=["GET"])
+def get_student_reports(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 
+            sessionId,
+            CONVERT(VARCHAR, endTime, 23) AS endDate,
+            sys,
+            dys,
+            sdnn,
+            hr,
+            stressLevel
+        FROM SQSession
+        WHERE sid = ?
+        
+    """, (sid,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return jsonify({"message": "No reports found"}), 404
+
+    reports = []
+    for r in rows:
+        reports.append({
+            "sessionId": r[0],
+            "date": r[1],
+            "bloodPressure": f"{r[2]} / {r[3]} mmHg",
+            "heartRate": f"{r[5]} BPM",
+            "sdnn": r[4],
+            "stressLevel": r[6]
+        })
+
+    return jsonify(reports)
+
+# ----------- Get Top 5 Recent Reports By Student ID -------------
+@admin_BP.route("/studentReportsTop5/<int:sid>", methods=["GET"])
+def get_student_reports_top5(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT TOP 5 
+               sessionId,
+               CONVERT(VARCHAR, endTime, 23) AS endDate,
+               sys,
+               dys,
+               sdnn,
+               hr,
+               stressLevel
+        FROM SQSession
+        WHERE sid = ?
+        ORDER BY endTime DESC
+    """, (sid,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return jsonify({"message": "No reports found"}), 404
+
+    reports = []
+    for r in rows:
+        reports.append({
+            "sessionId": r[0],
+            "date": r[1],
+            "bloodPressure": f"{r[2]} / {r[3]} mmHg",
+            "heartRate": f"{r[5]} BPM",
+            "sdnn": r[4],
+            "stressLevel": r[6]
+        })
+
+    return jsonify(reports)
+
+#
+#
+# SELECT
+# sessionId,
+# CONVERT(VARCHAR, endTime, 23),
+# CONVERT(VARCHAR, startTime, 23),
+#
+# sys,
+# dys,
+# sdnn,
+# RMSSD
+# hr,
+#
+# RI, SI, CL,
+# stressLevel,
+# stressScore
+# FROM
+# SQSession
+# WHERE
+# sid = 1
