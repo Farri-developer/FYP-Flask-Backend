@@ -1,12 +1,13 @@
 from flask import Blueprint, request, jsonify
 from database.db import get_db_connection
+import pyodbc
 
 student_bp = Blueprint("student", __name__)
 
 # ---------------- STUDENTS   ----------------
 
 # GetStudent
-@student_bp.route("/getAll", methods=["GET"])
+@student_bp.route("/getall", methods=["GET"])
 def GetStudent():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -21,6 +22,33 @@ def GetStudent():
             "Regno": row[1],
             "Name": row[2],
             "semester": row[3]
+        })
+
+    conn.close()
+    return jsonify(students)
+
+
+
+
+# GetStudent
+@student_bp.route("/getbyid/<int:id>", methods=["GET"])
+def GetStudentById(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT sId, Regno, Name, semester,cgpa,gender,password FROM student where sid = ?", (id,))
+    rows = cursor.fetchall()
+
+    students = []
+    for row in rows:
+        students.append({
+            "sId": row[0],
+            "Regno": row[1],
+            "Name": row[2],
+            "semester": row[3],
+            "cgpa": row[4],
+            "gender": row[5],
+            "password": row[6]
         })
 
     conn.close()
@@ -88,32 +116,46 @@ def update_student(id):
     return jsonify({"message": "Student updated successfully"})
 
 
-# ---------------- Delete Student (Admin side) ----------------
+# ---------------- Delete Student  ----------------
+
+
+
 @student_bp.route("/delete/<int:id>", methods=["DELETE"])
 def delete_student(id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        DELETE FROM Student
-        WHERE sid = ?
-    """, (id,))
+    try:
+        # Check if student exists
+        cursor.execute("SELECT sid FROM Student WHERE sid = ?", (id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"error": "Student not found"}), 404
 
-    if cursor.rowcount == 0:
-        conn.close()
-        return jsonify({"error": "Student not found"}), 404
+        # Attempt to delete
+        cursor.execute("DELETE FROM Student WHERE sid = ?", (id,))
+        conn.commit()
 
-    conn.commit()
-    conn.close()
+        if cursor.rowcount == 0:
+            return jsonify({"message": f"Student {id} could not be deleted"}), 404
 
-    return jsonify({"message": "Student deleted successfully"})
+        return jsonify({"success": f"Student {id} deleted successfully"}), 200
+
+    except pyodbc.IntegrityError as ie:
+        # Foreign key constraint violation
+        return jsonify({
+            "error": "Cannot delete student. This student is referenced in another table (e.g., SQStats).",
+            "details": str(ie)
+        }), 400
 
 
-# Report api part
+    finally:
+        conn.close()  # Ensure connection always closes
+
 
 
 # ----------- Get all Reports By Student ID -------------
-@student_bp.route("/allReports/<int:sid>", methods=["GET"])
+@student_bp.route("/allreports/<int:sid>", methods=["GET"])
 def get_student_reports(sid):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -152,7 +194,7 @@ def get_student_reports(sid):
 
 
 # ----------- Get Top 5 Recent Reports By Student ID -------------
-@student_bp.route("/ReportsTop5/<int:sid>", methods=["GET"])
+@student_bp.route("/reportstop5/<int:sid>", methods=["GET"])
 def get_student_reports_top5(sid):
     conn = get_db_connection()
     cursor = conn.cursor()

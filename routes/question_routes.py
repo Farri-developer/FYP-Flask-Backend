@@ -1,11 +1,12 @@
 from flask import Blueprint, request, jsonify
 from database.db import get_db_connection
+import pyodbc
 
 question_bp = Blueprint("question", __name__)
 
 
 # ---------------- GET all Question----------------
-@question_bp.route("/getAll", methods=["GET"])
+@question_bp.route("/getall", methods=["GET"])
 def get_all_Quesion():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -82,8 +83,6 @@ def update_question(question_id):
 
 
 # ---------------- DELETE Question ----------------
-from flask import jsonify
-import pyodbc
 
 @question_bp.route("/delete/<int:question_id>", methods=["DELETE"])
 def delete_question(question_id):
@@ -100,10 +99,6 @@ def delete_question(question_id):
         # Attempt to delete
         cursor.execute("DELETE FROM Question WHERE qid = ?", (question_id,))
         conn.commit()
-
-        if cursor.rowcount == 0:
-            return jsonify({"message": f"Question {question_id} could not be deleted"}), 404
-
         return jsonify({"success": f"Question {question_id} deleted successfully"}), 200
 
     except pyodbc.IntegrityError as ie:
@@ -113,15 +108,13 @@ def delete_question(question_id):
             "details": str(ie)
         }), 400
 
-    except Exception as e:
-        return jsonify({"error": "Failed to delete question", "details": str(e)}), 500
 
     finally:
         conn.close()  # Ensure connection always closes
 
 # ---------------- GET Question BY ID  ------------
 
-@question_bp.route("/getById/<int:question_id>", methods=["GET"])
+@question_bp.route("/getbyid/<int:question_id>", methods=["GET"])
 def get_question(question_id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -141,7 +134,7 @@ def get_question(question_id):
 
 
 # ----------- Get One Unattempted Question For Student -------------
-@question_bp.route("/UnattemptedForSid/<int:sid>", methods=["GET"])
+@question_bp.route("/unattemptedforsid/<int:sid>", methods=["GET"])
 def get_question_for_student(sid):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -176,7 +169,7 @@ def get_question_for_student(sid):
 
 
 # ---------------- question-report-ID ------------
-@question_bp.route("/reportByQid/<int:question_id>", methods=["GET"])
+@question_bp.route("/reportbyqid/<int:question_id>", methods=["GET"])
 def question_report(question_id):
 
     conn = get_db_connection()

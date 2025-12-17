@@ -5,7 +5,7 @@ admin_BP = Blueprint("admin", __name__)
 
 
 # ---------------- LOGIN (ADMIN + STUDENT) ----------------
-@admin_BP.route("/", methods=["POST"])
+@admin_BP.route("", methods=["POST"])
 def login():
     data = request.json
     users = data.get("users")        # username / regno
