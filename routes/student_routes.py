@@ -126,13 +126,13 @@ def delete_student(id):
     cursor = conn.cursor()
 
     try:
-        # Check if student exists
+
         cursor.execute("SELECT sid FROM Student WHERE sid = ?", (id,))
         row = cursor.fetchone()
         if not row:
             return jsonify({"error": "Student not found"}), 404
 
-        # Attempt to delete
+
         cursor.execute("DELETE FROM Student WHERE sid = ?", (id,))
         conn.commit()
 
@@ -150,7 +150,7 @@ def delete_student(id):
 
 
     finally:
-        conn.close()  # Ensure connection always closes
+        conn.close()
 
 
 
@@ -231,3 +231,62 @@ def get_student_reports_top5(sid):
 
     return jsonify(reports)
 
+
+#======================================]
+
+
+
+def alpha_power(signal, fs):
+    from scipy.signal import welch
+    import numpy as np
+
+    freqs, psd = welch(signal, fs=fs)
+    idx = (freqs >= 8) & (freqs <= 13)
+
+    return np.mean(psd[idx])
+
+@student_bp.route("/eeg/alpha/combined", methods=["GET"])
+def get_combined_alpha_timestamp():
+    import pandas as pd
+    import numpy as np
+
+    # CSV read
+    df = pd.read_csv("data/raw10.csv")
+
+    fs = 128            # sampling rate
+    window_sec = 1
+    step_sec = 1
+
+    window_size = fs * window_sec
+    step_size = fs * step_sec
+
+    time_axis = []
+    alpha_values = []
+
+    channels = ["Ch1", "Ch2", "Ch3", "Ch4"]  # match your CSV columns
+
+    def alpha_power(signal, fs):
+        # Simple example using FFT to get power in alpha band (8-12 Hz)
+        freqs = np.fft.rfftfreq(len(signal), 1/fs)
+        fft_vals = np.abs(np.fft.rfft(signal))**2
+        alpha_band = (freqs >= 8) & (freqs <= 12)
+        return np.mean(fft_vals[alpha_band])
+
+    for i in range(0, len(df) - window_size, step_size):
+        alpha_list = []
+        for ch in channels:
+            window_signal = df[ch].values[i:i + window_size]
+            alpha_list.append(alpha_power(window_signal, fs))
+
+        # 4 channels combine (average)
+        combined_alpha = np.mean(alpha_list)
+
+        # timestamp in seconds
+        ts = i / fs
+        time_axis.append(round(ts, 3))
+        alpha_values.append(round(combined_alpha, 4))
+
+    return {
+        "time": time_axis,
+        "alpha": alpha_values
+    }
