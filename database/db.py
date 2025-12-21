@@ -8,3 +8,7 @@ def get_db_connection():
         "Trusted_Connection=yes;"
     )
     return conn
+
+
+
+

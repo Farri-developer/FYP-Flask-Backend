@@ -11,14 +11,14 @@ def login():
     users = data.get("users")        # username / regno
     passwords = data.get("passwords")
 
-    # ✅ ADMIN LOGIN
+
     if users == "admin" and passwords == "1234":
         return jsonify({
             "role": "admin",
             "message": "Admin Login Successfully"
         })
 
-    # ✅ STUDENT LOGIN (Database)
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -42,24 +42,3 @@ def login():
 
     # ❌ INVALID
     return jsonify({"error": "Invalid Credentials"}), 401
-
-#
-#
-# SELECT
-# sessionId,
-# CONVERT(VARCHAR, endTime, 23),
-# CONVERT(VARCHAR, startTime, 23),
-#
-# sys,
-# dys,
-# sdnn,
-# RMSSD
-# hr,
-#
-# RI, SI, CL,
-# stressLevel,
-# stressScore
-# FROM
-# SQSession
-# WHERE
-# sid = 1
