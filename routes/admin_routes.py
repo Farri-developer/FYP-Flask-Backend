@@ -23,9 +23,9 @@ def login():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT sId, Regno, Name
+        SELECT s_id, regno, name
         FROM Student
-        WHERE Regno = ? AND Password = ?
+        WHERE regno = ? AND password = ?
     """, (users, passwords))
 
     row = cursor.fetchone()
@@ -35,10 +35,10 @@ def login():
         return jsonify({
             "role": "student",
             "message": "Login Successfully",
-            "sId": row[0],
+            "s_id": row[0],
             "Regno": row[1],
             "Name": row[2]
         })
 
-    # ❌ INVALID
+
     return jsonify({"error": "Invalid Credentials"}), 401

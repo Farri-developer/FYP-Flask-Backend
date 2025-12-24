@@ -2,8 +2,7 @@ from flask import Flask
 from routes.student_routes import student_bp
 from routes.question_routes import question_bp
 from routes.admin_routes import admin_BP
-
-from bin import  bin_bp
+from routes.report_routes import  report_bp
 
 
 app = Flask(__name__)
@@ -12,7 +11,8 @@ app.register_blueprint(student_bp, url_prefix="/api/student")
 app.register_blueprint(question_bp, url_prefix="/api/question")
 app.register_blueprint(admin_BP, url_prefix="/api/admin")
 
-app.register_blueprint(bin_bp, url_prefix="/api/bin")
+app.register_blueprint(report_bp, url_prefix="/api/report")
+
 
 
 if __name__ == "__main__":

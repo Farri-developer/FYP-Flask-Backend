@@ -11,7 +11,7 @@ def get_all_Quesion():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute(" SELECT qid, description  from  Question")
+    cursor.execute(" SELECT q_id, description  from  Question")
     rows = cursor.fetchall()
 
     questions = []
@@ -34,12 +34,13 @@ def add_question():
     description = data.get("description")
     duration = data.get("duration")
 
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute(
-        "INSERT INTO Question (description, duration) VALUES (?, ?)",
-        (description, duration)
+        "INSERT INTO Question (description, duration , counts) VALUES (?, ?, ?)",
+        (description, duration,0)
     )
 
     conn.commit()
@@ -56,12 +57,13 @@ def update_question(question_id):
     data = request.json
     description = data.get("description")
     duration = data.get("duration")
+    counts = data.get("counts")
 
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE Question SET description = ?, duration = ? WHERE qid = ?",
-        (description, duration, question_id)
+        "UPDATE Question SET description=?, duration = ?,  counts=?  WHERE q_id = ?",
+        (description, duration,counts , question_id)
     )
 
     conn.commit()
@@ -80,14 +82,14 @@ def delete_question(question_id):
 
     try:
 
-        cursor.execute("SELECT * FROM Question WHERE qid = ?", (question_id,))
+        cursor.execute("SELECT * FROM Question WHERE q_id = ?", (question_id,))
         question = cursor.fetchone()
 
         if question is None:
             return jsonify({"error": "Question not found"}), 404
 
 
-        cursor.execute("DELETE FROM Question WHERE qid = ?", (question_id,))
+        cursor.execute("DELETE FROM Question WHERE q_id = ?", (question_id,))
         conn.commit()
 
         return jsonify({"success": f"Question {question_id} deleted successfully"}), 200
@@ -111,13 +113,13 @@ def delete_question(question_id):
 def get_question(question_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT qid, description, duration FROM Question WHERE qid = ?", (question_id,))
+    cursor.execute("SELECT q_id, description, duration FROM Question WHERE q_id = ?", (question_id,))
     row = cursor.fetchone()
     conn.close()
 
     if row:
         question = {
-            "qid": row[0],
+            "q_id": row[0],
             "description": row[1],
             "duration": row[2]
         }

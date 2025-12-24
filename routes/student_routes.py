@@ -12,15 +12,15 @@ student_bp = Blueprint("student", __name__)
 def GetStudent():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT sId, Regno, Name, semester FROM Student")
+    cursor.execute("SELECT s_Id, Regno, Name, semester FROM Student")
     rows = cursor.fetchall()
 
     students = []
     for row in rows:
         students.append({
-            "sId": row[0],
-            "Regno": row[1],
-            "Name": row[2],
+            "s_Id": row[0],
+            "regno": row[1],
+            "name": row[2],
             "semester": row[3]
         })
 
@@ -34,16 +34,16 @@ def GetStudentById(id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT sId, Regno, Name, semester,cgpa,gender,password FROM student where sid = ?", (id,))
+    cursor.execute("SELECT s_Id, Regno, Name, semester,cgpa,gender,password FROM student where s_id = ?", (id,))
     row = cursor.fetchone()
 
     if row is None:
         return jsonify({"error": "Student not found"}), 404
 
     student = {
-            "sId": row[0],
-            "Regno": row[1],
-            "Name": row[2],
+            "s_Id": row[0],
+            "regno": row[1],
+            "name": row[2],
             "semester": row[3],
             "cgpa": row[4],
             "gender": row[5],
@@ -52,17 +52,13 @@ def GetStudentById(id):
     conn.close()
     return jsonify(student)
 
-from flask import Blueprint, request, jsonify
-import sqlite3
 
 
 # ---------------- insertStudent ----------------
 @student_bp.route("/insert", methods=["POST"])
 def add_student():
     try:
-        data = request.get_json()  # safer than request.json
-
-
+        data = request.get_json()
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -70,10 +66,10 @@ def add_student():
             INSERT INTO Student (Regno, Name, Gender, Password, cgpa, semester)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
-            data["Regno"],
-            data["Name"],
-            data["Gender"],
-            data["Password"],
+            data["regno"],
+            data["name"],
+            data["gender"],
+            data["password"],
             data["cgpa"],
             data["semester"]
         ))
@@ -103,12 +99,12 @@ def update_student(id):
                            Password = ?,
                            cgpa     = ?,
                            semester = ?
-                       WHERE sid = ?
+                       WHERE s_id = ?
                        """, (
-                           data["Regno"],
-                           data["Name"],
-                           data["Gender"],
-                           data["Password"],
+                           data["regno"],
+                           data["name"],
+                           data["gender"],
+                           data["password"],
                            data["cgpa"],
                            data["semester"],
                            id
@@ -131,14 +127,14 @@ def delete_student(id):
 
     try:
 
-        cursor.execute("SELECT * FROM Student WHERE sid = ?", (id,))
+        cursor.execute("SELECT * FROM Student WHERE s_id = ?", (id,))
         student = cursor.fetchone()
 
         if student is None:
             return jsonify({"error": "Student not found"}), 404
 
 
-        cursor.execute("DELETE FROM Student WHERE sid = ?", (id,))
+        cursor.execute("DELETE FROM Student WHERE s_id = ?", (id,))
         conn.commit()
 
         return jsonify({"success": f"Student {id} deleted successfully"}), 200
@@ -150,33 +146,32 @@ def delete_student(id):
             "details": str(ie)
         }), 400
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
     finally:
         conn.close()
 
 
-
-
-# ----------- Get all Reports By Student ID -------------
-@student_bp.route("/allreports/<int:sid>", methods=["GET"])
-def get_student_reports(sid):
+# ---------------- Get all Reports By Student ID ----------------
+@student_bp.route("/allreports/<int:s_id>", methods=["GET"])
+def get_student_reports(s_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-                   SELECT sessionId,
-                          CONVERT(VARCHAR, endTime, 23) AS endDate,
-                          sys ,
-                          dys,
-                          sdnn,
-                          hr,
-                          stressLevel
-                   FROM SQSession
-                   WHERE sid = ?
-
-                   """, (sid,))
+        SELECT 
+            r.report_id,
+            r.session_id,
+            CONVERT(VARCHAR, ss.endTime, 23) AS endDate,
+            r.SYS,
+            r.DYS,
+            r.SDNN,
+            r.HR,
+            r.stress_level
+        FROM Reports r
+        JOIN StudentSession ss ON r.session_id = ss.session_id
+        WHERE r.s_id = ?
+        ORDER BY ss.endTime ASC
+    """, (s_id,))
 
     rows = cursor.fetchall()
     conn.close()
@@ -187,35 +182,39 @@ def get_student_reports(sid):
     reports = []
     for r in rows:
         reports.append({
-            "sessionId": r[0],
-            "date": r[1],
-            "bloodPressure": f"{r[2]} / {r[3]} mmHg",
-            "heartRate": f"{r[5]} BPM",
-            "sdnn": r[4],
-            "stressLevel": r[6]
+            "reportId": r[0],
+            "sessionId": r[1],
+            "date": r[2],
+            "bloodPressure": f"{r[3]} / {r[4]} mmHg",
+            "heartRate": f"{r[6]} BPM",
+            "sdnn": r[5],
+            "stressLevel": r[7]
         })
 
     return jsonify(reports)
 
 
-# ----------- Get Top 5 Recent Reports By Student ID -------------
-@student_bp.route("/reportstop5/<int:sid>", methods=["GET"])
-def get_student_reports_top5(sid):
+# ---------------- Get Top 5 Recent Reports By Student ID ----------------
+@student_bp.route("/reportstop5/<int:s_id>", methods=["GET"])
+def get_student_reports_top5(s_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-                   SELECT TOP 5 
-               sessionId, CONVERT(VARCHAR, endTime, 23) AS endDate,
-                          sys,
-                          dys,
-                          sdnn,
-                          hr,
-                          stressLevel
-                   FROM SQSession
-                   WHERE sid = ?
-                   ORDER BY endTime DESC
-                   """, (sid,))
+        SELECT TOP 5 
+            r.report_id,
+            r.session_id,
+            CONVERT(VARCHAR, ss.endTime, 23) AS endDate,
+            r.SYS,
+            r.DYS,
+            r.SDNN,
+            r.HR,
+            r.stress_level
+        FROM Reports r
+        JOIN StudentSession ss ON r.session_id = ss.session_id
+        WHERE r.s_id = ?
+        ORDER BY ss.endTime DESC
+    """, (s_id,))
 
     rows = cursor.fetchall()
     conn.close()
@@ -226,14 +225,13 @@ def get_student_reports_top5(sid):
     reports = []
     for r in rows:
         reports.append({
-            "sessionId": r[0],
-            "date": r[1],
-            "bloodPressure": f"{r[2]} / {r[3]} mmHg",
-            "heartRate": f"{r[5]} BPM",
-            "sdnn": r[4],
-            "stressLevel": r[6]
+            "reportId": r[0],
+            "sessionId": r[1],
+            "date": r[2],
+            "bloodPressure": f"{r[3]} / {r[4]} mmHg",
+            "heartRate": f"{r[6]} BPM",
+            "sdnn": r[5],
+            "stressLevel": r[7]
         })
 
     return jsonify(reports)
-
-
