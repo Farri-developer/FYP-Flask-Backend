@@ -15,7 +15,6 @@ def login():
     if users == "admin" and passwords == "1234":
         return jsonify({
             "role": "admin",
-            "message": "Admin Login Successfully"
         })
 
 
@@ -34,10 +33,6 @@ def login():
     if row:
         return jsonify({
             "role": "student",
-            "message": "Login Successfully",
-            "s_id": row[0],
-            "Regno": row[1],
-            "Name": row[2]
         })
 
 
