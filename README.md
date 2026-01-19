@@ -1,87 +1,134 @@
-FYP Project: Student Stress Monitoring System
-📄 Overview
+# Student Stress Monitoring System (API-Based Backend)
 
-Ye project ek Student Stress Monitoring System hai jo students ke physiological signals (EEG, PPG, BP) ko record karta hai, process karta hai, aur per session/per question stress reports generate karta hai.
-System Flask + SQL Server par build hai aur students ki performance aur stress history track karta hai.
+## 📄 Overview
 
-🔗 Database Structure
-Tables & Relationships
-Table Name	Description
-Student	Student basic info (regno, name, cgpa, semester, password)
-StudentSession	Records each student session with start/end time, sensor file paths, self-report
-Question	Questions available for students to attempt
-QuestionAttempt	Tracks which student attempted which question, time taken, answer
-Reports	Stress reports per session/question including HR, BP, EEG features, stress score & level
+Ye project **Student Stress Monitoring System** ka backend hai, jo **Flask REST APIs** aur **SQL Server** par based hai.  
+System students ke physiological signals (EEG, PPG, BP) ko record karta hai, un par signal processing apply karta hai, aur per question / per session stress reports generate karta hai.
 
-Relationships:
+**Key Features:**
+- Mobile App / Frontend (React Native) ke liye API data provide karta hai
+- Student performance aur stress history track karta hai
+- Real-time & historical analysis support karta hai
 
-Student → StudentSession (1:N)
+---
 
-StudentSession → QuestionAttempt (1:N)
+## 🔗 Database Structure
 
-Question → QuestionAttempt (1:N)
+### 🗂 Tables Used by APIs
 
-Student → QuestionAttempt (1:N)
+| Table Name       | API Usage                                      |
+|-----------------|-----------------------------------------------|
+| Student          | Student authentication, profile, reports     |
+| Session          | Session start/end, sensor file paths         |
+| Question         | Question fetching & management               |
+| QuestionAttempt  | Student answers, time, scores                |
+| Reports          | Stress analytics & visualization             |
 
-StudentSession → Reports (1:N)
+### 🔑 Relationships
 
-Question → Reports (1:N)
+- `Student → Session` (1:N)  
+- `Session → QuestionAttempt` (1:N)  
+- `Question → QuestionAttempt` (1:N)  
+- `Student → QuestionAttempt` (1:N)  
+- `Session → Reports` (1:N)  
+- `Question → Reports` (1:N)  
+- `Student → Reports` (1:N)  
 
-Student → Reports (1:N)
+✔ APIs foreign key constraints ko follow karti hain  
+✔ `ON DELETE CASCADE` se orphan data avoid hota hai  
 
-All foreign keys are set with ON DELETE CASCADE where necessary to maintain data integrity.
+---
 
-🧠 System Flow
+## 🧠 API-Based System Flow
 
-Student Login: Regno + password authentication.
+### 1. Student Authentication API
+- Registration number + password verify hota hai
+- Student ID (sid) frontend ko return hoti hai
 
-Session Start: New session is created.
+### 2. Session Management APIs
+- **Session Start API:** New session create hoti hai, startTime store hota hai
+- **Session End API:** endTime update hota hai, self-report save hota hai
 
-Sensor Recording: EEG, PPG, BP signals captured and file paths stored.
+### 3. Sensor Data APIs
+- EEG, PPG, BP signals record hotay hain
+- File paths database mein store hotay hain
+- Raw data Flask APIs se process hota hai
 
-Question Attempt: Student attempts questions; responses logged.
+### 4. Question Handling APIs
+- Student ke liye unattempted question fetch hota hai
+- `QuestionAttempt` table update hoti hai (time, answer, scores)
 
-Session End & Self-Report: Student completes self-assessment.
+### 5. Signal Processing APIs
+- EEG, PPG, BP signals se features extract hotay hain
+- Processing Python libraries (NumPy, Pandas) se hoti hai
 
-Signal Processing: Extract features from EEG, PPG, BP.
+### 6. Stress Calculation APIs
+- Stress Score calculate hota hai (0–100)
+- Stress Level assign hota hai: **Low / Medium / High**
 
-Stress Calculation: Stress score (0–100) and stress level assigned.
+### 7. Report Generation APIs
+- Per question report  
+- Per session report  
+- Student-wise stress history
 
-Report Generation: Stores per session/per question reports.
+### 8. Visualization APIs
+- EEG Alpha band combined graph  
+- Stress trends over time  
+- Question-wise stress analysis  
 
-Visualization: Students can view graphs and dashboards.
+---
 
-🧪 Extracted Features
-Signal Type	Features
-PPG	HR, SDNN, RMSSD
-BP	SYS, DYS
-EEG	CL, RI, SI
-🟢 Normalization
+## 🧪 Extracted Features
 
-1NF ✅
+| Signal | Features       |
+|--------|----------------|
+| PPG    | HR, SDNN, RMSSD|
+| BP     | SYS, DYS       |
+| EEG    | CL, RI, SI     |
 
-2NF ✅
+✔ Features APIs ke through calculate aur `Reports` table mein save hotay hain  
 
-3NF ✅ (controlled redundancy)
+---
 
-⚙️ Project Setup
+## 🟢 Normalization
 
-Install required packages:
+- **1NF** – Atomic fields  
+- **2NF** – Full functional dependency  
+- **3NF** – Controlled redundancy  
 
+✔ APIs sirf normalized data access karti hain  
+
+---
+
+## ⚙️ Backend Setup
+
+### 📦 Install Dependencies
+```bash
 pip install flask pyodbc pandas numpy
+🗄 Database Setup
+SQL Server install karein
 
+Database create karein:
 
-Setup SQL Server and create FYP_update database (tables provided in SQL script).
+sql
+Copy code
+CREATE DATABASE Update_Database;
+Tables SQL script se create karein
 
-Update db.py with your database credentials.
+db.py mein credentials update karein
 
-Run Flask server:
-
+▶️ Run Flask Server
+bash
+Copy code
 python app.py
-
-🔌 Endpoints
+🔌 API Endpoints
 Endpoint	Method	Description
-/students	GET	Get list of all students
-/unattemptedforsid/<sid>	GET	Get one unattempted question for a student
-/reportbyqid/<qid>	GET	Get aggregated report for a question
-/eeg/alpha/combined	GET	Get combined alpha EEG signal for visualization
+/student/getall	GET	Get all students
+/student/getbyid/<sid>	GET	Get student profile
+/student/allreports/<sid>	GET	Student stress history
+/student/reportstop5/<sid>	GET	Last 5 reports
+/question/getall	GET	Get all questions
+/question/insert	POST	Add new question
+/unattemptedforsid/<sid>	GET	Get one unattempted question
+/reportbyqid/<qid>	GET	Aggregated stress report
+/eeg/alpha/combined	GET	EEG Alpha visualization
