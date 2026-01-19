@@ -10,32 +10,30 @@ report_bp = Blueprint("report", __name__)
 
 #--------------------------------------------
 
-
-# ----------- Get One Unattempted Question For Student -------------
 @report_bp.route("/unattemptedforsid/<int:sid>", methods=["GET"])
 def get_question_for_student(sid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT TOP 1 q.q_id, q.description, q.duration
+    query = """
+        SELECT TOP 1 q.qid, q.description, q.duration
         FROM Question q
         WHERE NOT EXISTS (
             SELECT 1
             FROM QuestionAttempt qa
-            JOIN StudentSession ss ON qa.session_id = ss.session_id
-            WHERE qa.q_id = q.q_id
-              AND qa.s_id = ?
+            WHERE qa.qid = q.qid
+              AND qa.sid = ?
         )
-        ORDER BY q.q_id
-    """, (sid,))
+        ORDER BY q.qid
+    """
 
+    cursor.execute(query, (sid,))
     row = cursor.fetchone()
     conn.close()
 
     if row:
         return jsonify({
-            "q_id": row[0],
+            "qid": row[0],
             "description": row[1],
             "duration": row[2]
         }), 200
@@ -47,17 +45,17 @@ def get_question_for_student(sid):
 
 
 # ---------------- question-report-ID ----------------
-@report_bp.route("/reportbyqid/<int:question_id>", methods=["GET"])
-def question_report(question_id):
+@report_bp.route("/reportbyqid/<int:qid>", methods=["GET"])
+def question_report(qid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     query = """
         SELECT 
-            q.q_id,
+            q.qid,
             q.description,
             q.duration,
-            COUNT(r.report_id) AS total_attempts,
+            COUNT(r.reportid) AS total_attempts,
             AVG(r.SYS)   AS avg_sys,
             AVG(r.DYS)   AS avg_dys,
             AVG(r.HR)    AS avg_hr,
@@ -67,19 +65,19 @@ def question_report(question_id):
             AVG(r.RI)    AS avg_ri,
             AVG(r.CL)    AS avg_cl,
             (
-                SELECT TOP 1 r2.stress_level
+                SELECT TOP 1 r2.stresslevel
                 FROM Reports r2
-                WHERE r2.q_id = q.q_id
-                GROUP BY r2.stress_level
+                WHERE r2.qid = q.qid
+                GROUP BY r2.stresslevel
                 ORDER BY COUNT(*) DESC
             ) AS most_common_stress_level
         FROM Question q
-        LEFT JOIN Reports r ON q.q_id = r.q_id
-        WHERE q.q_id = ?
-        GROUP BY q.q_id, q.description, q.duration
+        LEFT JOIN Reports r ON q.qid = r.qid
+        WHERE q.qid = ?
+        GROUP BY q.qid, q.description, q.duration
     """
 
-    cursor.execute(query, (question_id,))
+    cursor.execute(query, (qid,))
     row = cursor.fetchone()
     conn.close()
 
@@ -87,18 +85,18 @@ def question_report(question_id):
         return jsonify({"error": "Question not found"}), 404
 
     response = {
-        "q_id": row[0],
+        "qid": row[0],
         "description": row[1],
         "duration": row[2],
         "total_attempts": row[3],
-        "avg_sys": round(row[4]) if row[4] else None,
-        "avg_dys": round(row[5]) if row[5] else None,
-        "avg_heart_rate": round(row[6]) if row[6] else None,
-        "avg_sdnn": round(row[7]) if row[7] else None,
-        "avg_rmssd": round(row[8]) if row[8] else None,
-        "avg_si": round(row[9]) if row[9] else None,
-        "avg_ri": round(row[10]) if row[10] else None,
-        "avg_cl": round(row[11]) if row[11] else None,
+        "avg_sys": round(row[4], 2) if row[4] else None,
+        "avg_dys": round(row[5], 2) if row[5] else None,
+        "avg_heart_rate": round(row[6], 2) if row[6] else None,
+        "avg_sdnn": round(row[7], 2) if row[7] else None,
+        "avg_rmssd": round(row[8], 2) if row[8] else None,
+        "avg_si": round(row[9], 2) if row[9] else None,
+        "avg_ri": round(row[10], 2) if row[10] else None,
+        "avg_cl": round(row[11], 2) if row[11] else None,
         "most_common_stress_level": row[12]
     }
 

@@ -6,125 +6,136 @@ question_bp = Blueprint("question", __name__)
 
 
 # ---------------- GET all Question----------------
+
 @question_bp.route("/getall", methods=["GET"])
-def get_all_Quesion():
+def get_all_questions():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute(" SELECT q_id, description  from  Question")
+    cursor.execute("SELECT qid, description, duration, questionlevel, count FROM Question")
     rows = cursor.fetchall()
-
-    questions = []
-    for row in rows:
-        questions.append({
-            "qid": row[0],
-            "description": row[1],
-
-        })
-
     conn.close()
+
+    questions = [{
+        "qid": r[0],
+        "description": r[1],
+        "duration": r[2],
+        "questionlevel": r[3],
+        "count": r[4]
+    } for r in rows]
+
     return jsonify(questions), 200
 
 
 # ---------------- INSERT Question  ------------
+
 @question_bp.route("/insert", methods=["POST"])
 def add_question():
-    data = request.json
-
-    description = data.get("description")
-    duration = data.get("duration")
-
+    data = request.get_json()
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        "INSERT INTO Question (description, duration , counts) VALUES (?, ?, ?)",
-        (description, duration,0)
-    )
+    cursor.execute("""
+        INSERT INTO Question (description, duration, questionlevel, count)
+        VALUES (?, ?, ?, ?)
+    """, (
+        data["description"],
+        data["duration"],
+        data.get("questionlevel"),
+        0
+    ))
 
     conn.commit()
     conn.close()
 
-    return jsonify({"success": "Question added successfully"}), 201
+    return jsonify({"message": "Question added successfully"}), 201
+
+
+
 
 
 # ---------------- update Question  ------------
 
-@question_bp.route("/update/<int:question_id>", methods=["PUT"])
-def update_question(question_id):
 
-    data = request.json
-    description = data.get("description")
-    duration = data.get("duration")
-    counts = data.get("counts")
+@question_bp.route("/update/<int:qid>", methods=["PUT"])
+def update_question(qid):
+    data = request.get_json()
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE Question SET description=?, duration = ?,  counts=?  WHERE q_id = ?",
-        (description, duration,counts , question_id)
-    )
+
+    cursor.execute("""
+        UPDATE Question
+        SET description = ?,
+            duration = ?,
+            questionlevel = ?,
+            count = ?
+        WHERE qid = ?
+    """, (
+        data["description"],
+        data["duration"],
+        data.get("questionlevel"),
+        data.get("count", 0),
+        qid
+    ))
 
     conn.commit()
     conn.close()
 
-    return jsonify({"success": f"Question {question_id} updated successfully"}), 200
-
-
+    return jsonify({"message": f"Question {qid} updated successfully"}), 200
 
 
 # ---------------- DELETE Question ----------------
-@question_bp.route("/delete/<int:question_id>", methods=["DELETE"])
-def delete_question(question_id):
+
+@question_bp.route("/delete/<int:qid>", methods=["DELETE"])
+def delete_question(qid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-
-        cursor.execute("SELECT * FROM Question WHERE q_id = ?", (question_id,))
-        question = cursor.fetchone()
-
-        if question is None:
+        cursor.execute("SELECT qid FROM Question WHERE qid = ?", (qid,))
+        if not cursor.fetchone():
             return jsonify({"error": "Question not found"}), 404
 
-
-        cursor.execute("DELETE FROM Question WHERE q_id = ?", (question_id,))
+        cursor.execute("DELETE FROM Question WHERE qid = ?", (qid,))
         conn.commit()
 
-        return jsonify({"success": f"Question {question_id} deleted successfully"}), 200
+        return jsonify({"message": f"Question {qid} deleted successfully"}), 200
 
-    except pyodbc.IntegrityError as ie:
-
+    except pyodbc.IntegrityError:
         return jsonify({
-            "error": "Cannot delete question. It is referenced in another table (SQStats).",
-            "details": str(ie)
+            "error": "Cannot delete question. It is referenced in another table."
         }), 400
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
     finally:
         conn.close()
 
-# ---------------- GET Question BY ID  ------------
 
-@question_bp.route("/getbyid/<int:question_id>", methods=["GET"])
-def get_question(question_id):
+
+# ---------------- GET Question BY ID  ------------
+@question_bp.route("/getbyid/<int:qid>", methods=["GET"])
+def get_question_by_id(qid):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT q_id, description, duration FROM Question WHERE q_id = ?", (question_id,))
+
+    cursor.execute("""
+        SELECT qid, description, duration, questionlevel, count
+        FROM Question
+        WHERE qid = ?
+    """, (qid,))
+
     row = cursor.fetchone()
     conn.close()
 
-    if row:
-        question = {
-            "q_id": row[0],
-            "description": row[1],
-            "duration": row[2]
-        }
-        return jsonify(question), 200
-    else:
+    if not row:
         return jsonify({"error": "Question not found"}), 404
 
+    return jsonify({
+        "qid": row[0],
+        "description": row[1],
+        "duration": row[2],
+        "questionlevel": row[3],
+        "count": row[4]
+    }), 200
 
