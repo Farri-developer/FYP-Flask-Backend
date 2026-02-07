@@ -15,7 +15,7 @@ def get_students():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT sid, regno, name, semester FROM Student")
+    cursor.execute("SELECT sid, regno, name, semester,cgpa FROM Student")
     rows = cursor.fetchall()
     conn.close()
 
@@ -23,7 +23,8 @@ def get_students():
         "sid": r[0],
         "regno": r[1],
         "name": r[2],
-        "semester": r[3]
+        "semester": r[3],
+        "cgpa":r[4]
     } for r in rows]
 
     return jsonify(students), 200
