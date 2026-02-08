@@ -7,6 +7,13 @@ student_bp = Blueprint("student", __name__)
 
 # ---------------- STUDENTS   ----------------
 
+# GetStudent all student
+# GetStudent by id
+# insertStudent done
+# Delete Student
+# updateStudent
+
+
 #------------- GetStudent all student---------
 
 
@@ -15,7 +22,7 @@ def get_students():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT sid, regno, name, semester,cgpa FROM Student")
+    cursor.execute("SELECT sid, regno, name, semester,cgpa , password,gender FROM Student")
     rows = cursor.fetchall()
     conn.close()
 
@@ -24,7 +31,9 @@ def get_students():
         "regno": r[1],
         "name": r[2],
         "semester": r[3],
-        "cgpa":r[4]
+        "cgpa":r[4],
+        "password":r[5]
+
     } for r in rows]
 
     return jsonify(students), 200
@@ -145,83 +154,3 @@ def delete_student(sid):
     finally:
         conn.close()
 
-
-# ---------------- Get all Reports By Student ID ----------------
-
-
-@student_bp.route("/allreports/<int:sid>", methods=["GET"])
-def get_student_reports(sid):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT 
-            r.reportid,
-            r.sessionid,
-            CONVERT(VARCHAR, s.endtime, 23),
-            r.SYS,
-            r.DYS,
-            r.HR,
-            r.SDNN,
-            r.stresslevel
-        FROM Reports r
-        JOIN Session s ON r.sessionid = s.sessionid
-        WHERE r.sid = ?
-        ORDER BY s.endtime ASC
-    """, (sid,))
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        return jsonify({"message": "No reports found"}), 404
-
-    return jsonify([{
-        "reportId": r[0],
-        "sessionId": r[1],
-        "date": r[2],
-        "bloodPressure": f"{r[3]} / {r[4]}",
-        "heartRate": r[5],
-        "sdnn": r[6],
-        "stressLevel": r[7]
-    } for r in rows]), 200
-
-
-# ---------------- Get Top 5 Recent Reports By Student ID ----------------
-
-@student_bp.route("/reportstop5/<int:sid>", methods=["GET"])
-def get_student_reports_top5(sid):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT TOP 5
-            r.reportid,
-            r.sessionid,
-            CONVERT(VARCHAR, s.endtime, 23),
-            r.SYS,
-            r.DYS,
-            r.HR,
-            r.SDNN,
-            r.stresslevel
-        FROM Reports r
-        JOIN Session s ON r.sessionid = s.sessionid
-        WHERE r.sid = ?
-        ORDER BY s.endtime DESC
-    """, (sid,))
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        return jsonify({"message": "No reports found"}), 404
-
-    return jsonify([{
-        "reportId": r[0],
-        "sessionId": r[1],
-        "date": r[2],
-        "bloodPressure": f"{r[3]} / {r[4]}",
-        "heartRate": r[5],
-        "sdnn": r[6],
-        "stressLevel": r[7]
-    } for r in rows]), 200

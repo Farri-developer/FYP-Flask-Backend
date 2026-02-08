@@ -10,6 +10,93 @@ report_bp = Blueprint("report", __name__)
 
 #--------------------------------------------
 
+
+# Get all Reports By Student ID
+# Get Top 5 Recent Reports By Student ID
+
+
+
+# ---------------- Get all Reports By Student ID ----------------
+
+
+@report_bp.route("/allreports/<int:sid>", methods=["GET"])
+def get_student_reports(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 
+            r.reportid,
+            r.sessionid,
+            CONVERT(VARCHAR, s.endtime, 23),
+            r.SYS,
+            r.DYS,
+            r.HR,
+            r.SDNN,
+            r.stresslevel
+        FROM Reports r
+        JOIN Session s ON r.sessionid = s.sessionid
+        WHERE r.sid = ?
+        ORDER BY s.endtime ASC
+    """, (sid,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return jsonify({"message": "No reports found"}), 404
+
+    return jsonify([{
+        "reportId": r[0],
+        "sessionId": r[1],
+        "date": r[2],
+        "bloodPressure": f"{r[3]} / {r[4]}",
+        "heartRate": r[5],
+        "sdnn": r[6],
+        "stressLevel": r[7]
+    } for r in rows]), 200
+
+
+# ---------------- Get Top 5 Recent Reports By Student ID ----------------
+
+@report_bp.route("/reportstop5/<int:sid>", methods=["GET"])
+def get_student_reports_top5(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT TOP 5
+            r.reportid,
+            r.sessionid,
+            CONVERT(VARCHAR, s.endtime, 23),
+            r.SYS,
+            r.DYS,
+            r.HR,
+            r.SDNN,
+            r.stresslevel
+        FROM Reports r
+        JOIN Session s ON r.sessionid = s.sessionid
+        WHERE r.sid = ?
+        ORDER BY s.endtime DESC
+    """, (sid,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return jsonify({"message": "No reports found"}), 404
+
+    return jsonify([{
+        "reportId": r[0],
+        "sessionId": r[1],
+        "date": r[2],
+        "bloodPressure": f"{r[3]} / {r[4]}",
+        "heartRate": r[5],
+        "sdnn": r[6],
+        "stressLevel": r[7]
+    } for r in rows]), 200
+
+
 @report_bp.route("/unattemptedforsid/<int:sid>", methods=["GET"])
 def get_question_for_student(sid):
     conn = get_db_connection()

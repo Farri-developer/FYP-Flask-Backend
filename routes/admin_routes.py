@@ -33,6 +33,7 @@ def login():
     if row:
         return jsonify({
             "role": "student",
+            'sid': row[0],
         })
 
 

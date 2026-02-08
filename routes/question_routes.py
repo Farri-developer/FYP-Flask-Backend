@@ -5,6 +5,14 @@ import pyodbc
 question_bp = Blueprint("question", __name__)
 
 
+#  GET all Question-
+# INSERT Question
+# DELETE Question
+# GET Question BY ID
+# update Question
+
+
+
 # ---------------- GET all Question----------------
 
 @question_bp.route("/getall", methods=["GET"])
