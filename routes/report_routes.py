@@ -138,24 +138,23 @@ def get_student_reports_top5(sid):
     ), 200
 
 
-
-# ---------------- Get Unattempted Question For Student ----------------
-@report_bp.route("/unattemptedforsid/<int:sid>", methods=["GET"])
-def get_question_for_student(sid):
+# ---------------- Get Unattempted Question For Student  easy ----------------
+@report_bp.route("/unattemptedeasy/<int:sid>", methods=["GET"])
+def get_question_for_student_easy(sid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     query = """
-       
-        SELECT top 1 q.qid, q.description, q.duration
-        FROM Question q
-        WHERE NOT EXISTS (
-        SELECT 1
-        FROM QuestionAttempt qa
-        WHERE qa.qid = q.qid
-        AND qa.sid = ?
-    )
-    ORDER BY COUNT ASC
+       SELECT TOP 1 q.qid, q.description, q.duration, q.questionlevel, q.COUNT
+       FROM Question q
+       WHERE q.questionlevel = 'easy'
+         AND NOT EXISTS (
+             SELECT 1
+             FROM QuestionAttempt qa
+             WHERE qa.qid = q.qid
+               AND qa.sid = ?
+         )
+       ORDER BY q.COUNT ASC;
     """
 
     cursor.execute(query, (sid,))
@@ -167,6 +166,80 @@ def get_question_for_student(sid):
             "qid": row[0],
             "description": row[1],
             "duration": row[2],
+            "questionlevel": row[3],
+            "count": row[4]
+        }), 200
+    else:
+        return jsonify({"message": "No new question available for this student"}), 404
+
+
+
+# ---------------- Get Unattempted Question For Student  hard  ----------------
+@report_bp.route("/unattemptedhard/<int:sid>", methods=["GET"])
+def get_question_for_student_hard(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = """
+       SELECT TOP 1 q.qid, q.description, q.duration, q.questionlevel, q.COUNT
+       FROM Question q
+       WHERE q.questionlevel = 'hard'
+         AND NOT EXISTS (
+             SELECT 1
+             FROM QuestionAttempt qa
+             WHERE qa.qid = q.qid
+               AND qa.sid = ?
+         )
+       ORDER BY q.COUNT ASC;
+    """
+
+    cursor.execute(query, (sid,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify({
+            "qid": row[0],
+            "description": row[1],
+            "duration": row[2],
+            "questionlevel": row[3],
+            "count": row[4]
+        }), 200
+    else:
+        return jsonify({"message": "No new question available for this student"}), 404
+
+
+
+# ---------------- Get Unattempted Question For Student  Medium ----------------
+@report_bp.route("/unattemptedmedium/<int:sid>", methods=["GET"])
+def get_question_for_student(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = """
+       SELECT TOP 1 q.qid, q.description, q.duration, q.questionlevel, q.COUNT
+       FROM Question q
+       WHERE q.questionlevel = 'Medium'
+         AND NOT EXISTS (
+             SELECT 1
+             FROM QuestionAttempt qa
+             WHERE qa.qid = q.qid
+               AND qa.sid = ?
+         )
+       ORDER BY q.COUNT ASC;
+    """
+
+    cursor.execute(query, (sid,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify({
+            "qid": row[0],
+            "description": row[1],
+            "duration": row[2],
+            "questionlevel": row[3],
+            "count": row[4]
         }), 200
     else:
         return jsonify({"message": "No new question available for this student"}), 404
@@ -175,8 +248,7 @@ def get_question_for_student(sid):
 
 
 
-
-# ---------------- Question Analytics Report By QID ----------------
+# ---------------- Question  Report By QID ----------------
 @report_bp.route("/reportbyqid/<int:qid>", methods=["GET"])
 def question_report(qid):
     conn = get_db_connection()
