@@ -7,38 +7,48 @@ from database.db import get_db_connection
 
 report_bp = Blueprint("report", __name__)
 
-
-#--------------------------------------------
-
-
-# Get all Reports By Student ID
-# Get Top 5 Recent Reports By Student ID
-
-
-
-# ---------------- Get all Reports By Student ID ----------------
-
-
-@report_bp.route("/allreports/<int:sid>", methods=["GET"])
+# ---------------- Get All Reports By Student ID ----------------
+@report_bp.route("/allsession/<int:sid>", methods=["GET"])
 def get_student_reports(sid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT 
-            r.reportid,
-            r.sessionid,
-            CONVERT(VARCHAR, s.endtime, 23),
-            r.SYS,
-            r.DYS,
-            r.HR,
-            r.SDNN,
-            r.stresslevel
-        FROM Reports r
-        JOIN Session s ON r.sessionid = s.sessionid
-        WHERE r.sid = ?
-        ORDER BY s.endtime ASC
-    """, (sid,))
+        s.sessionid,
+        CONVERT(VARCHAR, s.endtime, 23) AS date,
+
+        CONCAT(
+            CAST(AVG(r.AfterQuestionsys) AS INT),
+            '/',
+            CAST(AVG(r.AfterQuestionDIA) AS INT)
+        ) AS bp,
+
+        AVG(r.HR)   AS avg_hr,
+        AVG(r.SDNN) AS avg_sdnn,
+
+        -- Most common stress level in session
+        (
+         SELECT TOP 1 r2.stresslevel
+           FROM Reports r2
+            WHERE r2.sessionid = s.sessionid   -- ✅ FIX
+            GROUP BY r2.stresslevel
+            ORDER BY COUNT(*) DESC
+      ) AS stresslevel
+
+    FROM Session s
+    JOIN Reports r ON r.sessionid = s.sessionid
+    WHERE s.sid = ?
+    GROUP BY s.sessionid, s.endtime
+    ORDER BY s.endtime ASC;
+
+       
+
+
+        """,
+        (sid,),
+    )
 
     rows = cursor.fetchall()
     conn.close()
@@ -46,39 +56,65 @@ def get_student_reports(sid):
     if not rows:
         return jsonify({"message": "No reports found"}), 404
 
-    return jsonify([{
-        "reportId": r[0],
-        "sessionId": r[1],
-        "date": r[2],
-        "bloodPressure": f"{r[3]} / {r[4]}",
-        "heartRate": r[5],
-        "sdnn": r[6],
-        "stressLevel": r[7]
-    } for r in rows]), 200
+    return jsonify(
+        [
+            {
+
+                "sessionId": r[0],
+                "date": r[1],
+                "afterQuestionBP": r[2] ,
+                "heartRate": r[3],
+                "sdnn": r[4],
+                "stressLevel": r[5],
+            }
+            for r in rows
+        ]
+    ), 200
 
 
 # ---------------- Get Top 5 Recent Reports By Student ID ----------------
-
-@report_bp.route("/reportstop5/<int:sid>", methods=["GET"])
+@report_bp.route("/sessiontop5/<int:sid>", methods=["GET"])
 def get_student_reports_top5(sid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT TOP 5
-            r.reportid,
-            r.sessionid,
-            CONVERT(VARCHAR, s.endtime, 23),
-            r.SYS,
-            r.DYS,
-            r.HR,
-            r.SDNN,
-            r.stresslevel
-        FROM Reports r
-        JOIN Session s ON r.sessionid = s.sessionid
-        WHERE r.sid = ?
-        ORDER BY s.endtime DESC
-    """, (sid,))
+    cursor.execute(
+        """ 
+                SELECT 
+                top 5
+                s.sessionid,
+                CONVERT(VARCHAR, s.endtime, 23) AS date,
+
+                CONCAT(
+                    CAST(AVG(r.AfterQuestionsys) AS INT),
+                    '/',
+                    CAST(AVG(r.AfterQuestionDIA) AS INT)
+                ) AS bp,
+
+                AVG(r.HR)   AS avg_hr,
+                AVG(r.SDNN) AS avg_sdnn,
+
+                -- Most common stress level in session
+                (
+                 SELECT TOP 1 r2.stresslevel
+                   FROM Reports r2
+                    WHERE r2.sessionid = s.sessionid   -- ✅ FIX
+                    GROUP BY r2.stresslevel
+                    ORDER BY COUNT(*) DESC
+              ) AS stresslevel
+
+            FROM Session s
+            JOIN Reports r ON r.sessionid = s.sessionid
+            WHERE s.sid = ?
+            GROUP BY s.sessionid, s.endtime
+            ORDER BY s.endtime ASC;
+
+
+
+
+                """,
+        (sid,),
+    )
 
     rows = cursor.fetchall()
     conn.close()
@@ -86,32 +122,40 @@ def get_student_reports_top5(sid):
     if not rows:
         return jsonify({"message": "No reports found"}), 404
 
-    return jsonify([{
-        "reportId": r[0],
-        "sessionId": r[1],
-        "date": r[2],
-        "bloodPressure": f"{r[3]} / {r[4]}",
-        "heartRate": r[5],
-        "sdnn": r[6],
-        "stressLevel": r[7]
-    } for r in rows]), 200
+    return jsonify(
+        [
+            {
+
+                "sessionId": r[0],
+                "date": r[1],
+                "afterQuestionBP": r[2],
+                "heartRate": r[3],
+                "sdnn": r[4],
+                "stressLevel": r[5],
+            }
+            for r in rows
+        ]
+    ), 200
 
 
+
+# ---------------- Get Unattempted Question For Student ----------------
 @report_bp.route("/unattemptedforsid/<int:sid>", methods=["GET"])
 def get_question_for_student(sid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     query = """
-        SELECT TOP 1 q.qid, q.description, q.duration
+       
+        SELECT top 1 q.qid, q.description, q.duration
         FROM Question q
         WHERE NOT EXISTS (
-            SELECT 1
-            FROM QuestionAttempt qa
-            WHERE qa.qid = q.qid
-              AND qa.sid = ?
-        )
-        ORDER BY q.qid
+        SELECT 1
+        FROM QuestionAttempt qa
+        WHERE qa.qid = q.qid
+        AND qa.sid = ?
+    )
+    ORDER BY COUNT ASC
     """
 
     cursor.execute(query, (sid,))
@@ -122,35 +166,38 @@ def get_question_for_student(sid):
         return jsonify({
             "qid": row[0],
             "description": row[1],
-            "duration": row[2]
+            "duration": row[2],
         }), 200
     else:
-        return jsonify({
-            "message": "No new question available for this student"
-        }), 404
+        return jsonify({"message": "No new question available for this student"}), 404
 
 
 
-# ---------------- question-report-ID ----------------
+
+
+
+# ---------------- Question Analytics Report By QID ----------------
 @report_bp.route("/reportbyqid/<int:qid>", methods=["GET"])
 def question_report(qid):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     query = """
-        SELECT 
+       SELECT 
             q.qid,
             q.description,
             q.duration,
             COUNT(r.reportid) AS total_attempts,
-            AVG(r.SYS)   AS avg_sys,
-            AVG(r.DYS)   AS avg_dys,
+             CONCAT(
+			   CAST(AVG(r.AfterQuestionsys) AS INT),
+					'/',
+			  CAST(AVG(r.AfterQuestionDIA) AS INT)
+				 ) AS bp,
             AVG(r.HR)    AS avg_hr,
             AVG(r.SDNN)  AS avg_sdnn,
             AVG(r.RMSSD) AS avg_rmssd,
             AVG(r.SI)    AS avg_si,
-            AVG(r.RI)    AS avg_ri,
-            AVG(r.CL)    AS avg_cl,
+            
             (
                 SELECT TOP 1 r2.stresslevel
                 FROM Reports r2
@@ -162,6 +209,7 @@ def question_report(qid):
         LEFT JOIN Reports r ON q.qid = r.qid
         WHERE q.qid = ?
         GROUP BY q.qid, q.description, q.duration
+
     """
 
     cursor.execute(query, (qid,))
@@ -176,21 +224,34 @@ def question_report(qid):
         "description": row[1],
         "duration": row[2],
         "total_attempts": row[3],
-        "avg_sys": round(row[4], 2) if row[4] else None,
-        "avg_dys": round(row[5], 2) if row[5] else None,
-        "avg_heart_rate": round(row[6], 2) if row[6] else None,
-        "avg_sdnn": round(row[7], 2) if row[7] else None,
-        "avg_rmssd": round(row[8], 2) if row[8] else None,
-        "avg_si": round(row[9], 2) if row[9] else None,
-        "avg_ri": round(row[10], 2) if row[10] else None,
-        "avg_cl": round(row[11], 2) if row[11] else None,
-        "most_common_stress_level": row[12]
+        "avg_bp": row[4],
+        "avg_heart_rate": row[5],
+        "avg_sdnn": row[6],
+        "avg_rmssd": row[7],
+        "avg_si": row[8],
+        "most_common_stress_level":row[9],
     }
 
     return jsonify(response), 200
 
 
-#Band Graph
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @report_bp.route("/eeg/alpha/combined", methods=["GET"])
 def get_combined_alpha_timestamp():
