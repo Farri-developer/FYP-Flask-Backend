@@ -3,6 +3,9 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 from pylsl import StreamInlet, resolve_byprop
 from bleak import BleakClient
+import os
+import pandas as pd
+import numpy as np
 
 # =========================
 # CONFIG & GLOBAL STATE
@@ -232,3 +235,86 @@ def status():
         "recording": "ON" if recording else "OFF",
         "baseline_bp": base_bp is not None
     })
+
+
+
+
+
+
+
+
+
+@health_api.route("/eeg/alpha/combined", methods=["GET"])
+def get_combined_alpha_timestamp():
+    try:
+        # 🔹 Absolute path based on current file
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        DATA_PATH = os.path.join(BASE_DIR, "..", "Data", "Raw10.csv")
+
+        if not os.path.exists(DATA_PATH):
+            return jsonify({"error": f"CSV file not found at {DATA_PATH}"}), 404
+
+        df = pd.read_csv(DATA_PATH)
+
+        fs = 128          # Sampling rate (Hz)
+        window_sec = 1
+        step_sec = 1      # 1 second step
+
+        window_size = fs * window_sec
+        step_size = fs * step_sec
+
+        channels = ["Ch1", "Ch2", "Ch3", "Ch4"]
+        alpha_values = []
+        time_axis = []
+
+        # 🔒 Safe Alpha Power computation
+        def alpha_power(signal, fs):
+            if len(signal) == 0:
+                return 0.0
+            signal = signal - np.mean(signal)
+            fft_vals = np.abs(np.fft.rfft(signal)) ** 2
+            freqs = np.fft.rfftfreq(len(signal), 1/fs)
+            alpha_band = (freqs >= 8) & (freqs <= 12)
+            if not np.any(alpha_band):
+                return 0.0
+            power = np.mean(fft_vals[alpha_band])
+            if np.isnan(power) or np.isinf(power):
+                return 0.0
+            return float(np.log10(power + 1))
+
+        # 🔹 Sliding window computation
+        t = 0
+        for i in range(0, len(df) - window_size, step_size):
+            ch_alpha = []
+            for ch in channels:
+                if ch not in df.columns:
+                    ch_alpha.append(0.0)
+                    continue
+                window_signal = df[ch].values[i:i + window_size]
+                ch_alpha.append(alpha_power(window_signal, fs))
+            combined_alpha = np.mean(ch_alpha)
+            if np.isnan(combined_alpha) or np.isinf(combined_alpha):
+                combined_alpha = 0.0
+            alpha_values.append(combined_alpha)
+            time_axis.append(t)
+            t += step_sec
+
+        # 🔹 Moving average smoothing
+        def moving_average(arr, n=5):
+            arr = np.array(arr, dtype=float)
+            arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+            if len(arr) < n:
+                return arr
+            return np.convolve(arr, np.ones(n)/n, mode='valid')
+
+        smooth_alpha = moving_average(alpha_values, n=5)
+        smooth_alpha = np.nan_to_num(smooth_alpha, nan=0.0, posinf=0.0, neginf=0.0)
+        smooth_time = time_axis[:len(smooth_alpha)]
+
+        return jsonify({
+            "time": smooth_time,
+            "alpha": smooth_alpha.tolist()
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
