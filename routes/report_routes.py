@@ -471,9 +471,6 @@ def student_question_report(sid, qid):
     }), 200
 
 
-
-
-
 # ---------------- 9 Question Report Admin (Combined Extended) ----------------
 @report_bp.route("/qus_rep_admin/<int:qid>", methods=["GET"])
 def qus_rep_admin(qid):
