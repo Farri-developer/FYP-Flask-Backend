@@ -15,10 +15,11 @@ report_bp = Blueprint("report", __name__)
 #6 Question  Report By QID admin side
 #7 Student Session Report Student side
 #8 Student Question Report student side
+# 9 Question Report Admin (Combined Extended)
 
 
 
-# ---------------- Get All Reports By Student ID  Admin & Student Side----------------
+# ----------------  1 Get All Reports By Student ID  Admin & Student Side----------------
 @report_bp.route("/allsession/<int:sid>", methods=["GET"])
 def get_student_reports(sid):
     conn = get_db_connection()
@@ -83,7 +84,7 @@ def get_student_reports(sid):
     ), 200
 
 
-# ---------------- Get Top 5 Recent Reports By Student ID Student side ----------------
+# ----------------  2 Get Top 5 Recent Reports By Student ID Student side ----------------
 @report_bp.route("/sessiontop5/<int:sid>", methods=["GET"])
 def get_student_reports_top5(sid):
     conn = get_db_connection()
@@ -149,7 +150,7 @@ def get_student_reports_top5(sid):
     ), 200
 
 
-# ---------------- Get Unattempted Question For Student  easy  Student side ----------------
+# ---------------- 3 Get Unattempted Question For Student  easy  Student side ----------------
 @report_bp.route("/unattemptedeasy/<int:sid>", methods=["GET"])
 def get_question_for_student_easy(sid):
     conn = get_db_connection()
@@ -185,7 +186,7 @@ def get_question_for_student_easy(sid):
 
 
 
-# ---------------- Get Unattempted Question For Student  hard  Student side ----------------
+# ---------------- 4 Get Unattempted Question For Student  hard  Student side ----------------
 @report_bp.route("/unattemptedhard/<int:sid>", methods=["GET"])
 def get_question_for_student_hard(sid):
     conn = get_db_connection()
@@ -221,7 +222,7 @@ def get_question_for_student_hard(sid):
 
 
 
-# ---------------- Get Unattempted Question For Student  Medium  Student side----------------
+# ----------------  5 Get Unattempted Question For Student  Medium  Student side----------------
 @report_bp.route("/unattemptedmedium/<int:sid>", methods=["GET"])
 def get_question_for_student(sid):
     conn = get_db_connection()
@@ -259,7 +260,7 @@ def get_question_for_student(sid):
 
 
 
-# ---------------- Question  Report By QID admin side ----------------
+# ---------------- 6 Question  Report By QID admin side ----------------
 @report_bp.route("/reportbyqid/<int:qid>", methods=["GET"])
 def question_report(qid):
     conn = get_db_connection()
@@ -320,7 +321,7 @@ def question_report(qid):
 
 
 
-# ---------------- Student Session Report Student side ----------------
+# ---------------- 7  Student Session Report Student side ----------------
 
 @report_bp.route("/student_session_report/<int:sid>/<int:sessionid>", methods=["GET"])
 def student_session_report(sid, sessionid):
@@ -360,7 +361,7 @@ def student_session_report(sid, sessionid):
             "description": row[1]
         })
 
-    # ---------------- Overall Stress & Performance ----------------
+    # ----------------   Overall Stress & Performance ----------------
     report_query = """
         SELECT  
             CONVERT(VARCHAR(10), s.endtime, 23) AS date,
@@ -420,7 +421,7 @@ def student_session_report(sid, sessionid):
 
 
 
-# ---------------- Student Question Report student side   ----------------
+# ---------------- 8 Student Question Report student side   ----------------
 @report_bp.route("/student_question_report/<int:sid>/<int:qid>", methods=["GET"])
 def student_question_report(sid, qid):
     conn = get_db_connection()
@@ -473,13 +474,169 @@ def student_question_report(sid, qid):
 
 
 
+# ---------------- 9 Question Report Admin (Combined Extended) ----------------
+@report_bp.route("/qus_rep_admin/<int:qid>", methods=["GET"])
+def qus_rep_admin(qid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
+    query = """
+    SELECT  
+        q.qid,
+        q.description,
+        q.duration,
 
+        -- Total attempts overall
+        (SELECT COUNT(*) 
+         FROM QuestionAttempt qa 
+         WHERE qa.qid = q.qid) AS total_attempts,
 
+        -- ================= WITH GPT =================
 
+        (SELECT CONCAT(
+                CAST(AVG(r3.AfterQuestionSys) AS INT),
+                '/',
+                CAST(AVG(r3.AfterQuestionDIA) AS INT))
+         FROM QuestionAttempt qa3
+         JOIN Reports r3 
+             ON qa3.QuestionAttemptID = r3.QuestionAttemptID
+         WHERE qa3.qid = q.qid
+           AND qa3.gptindex = 1) AS bp_with_gpt,
 
+        (SELECT CAST(AVG(r3.HR) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa3
+         JOIN Reports r3 
+             ON qa3.QuestionAttemptID = r3.QuestionAttemptID
+         WHERE qa3.qid = q.qid
+           AND qa3.gptindex = 1) AS avg_hr_with_gpt,
 
+        (SELECT CAST(AVG(r3.SDNN) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa3
+         JOIN Reports r3 
+             ON qa3.QuestionAttemptID = r3.QuestionAttemptID
+         WHERE qa3.qid = q.qid
+           AND qa3.gptindex = 1) AS avg_sdnn_with_gpt,
 
+        (SELECT CAST(AVG(r3.RMSSD) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa3
+         JOIN Reports r3 
+             ON qa3.QuestionAttemptID = r3.QuestionAttemptID
+         WHERE qa3.qid = q.qid
+           AND qa3.gptindex = 1) AS avg_rmssd_with_gpt,
 
+        (SELECT CAST(AVG(r3.SI) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa3
+         JOIN Reports r3 
+             ON qa3.QuestionAttemptID = r3.QuestionAttemptID
+         WHERE qa3.qid = q.qid
+           AND qa3.gptindex = 1) AS avg_si_with_gpt,
 
+        (SELECT TOP 1 r2.stresslevel
+         FROM QuestionAttempt qa2
+         JOIN Reports r2 
+             ON qa2.QuestionAttemptID = r2.QuestionAttemptID
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 1
+         GROUP BY r2.stresslevel
+         ORDER BY COUNT(*) DESC) 
+         AS most_common_stress_level_with_gpt,
 
+        (SELECT COUNT(*) 
+         FROM QuestionAttempt qa3
+         WHERE qa3.qid = q.qid
+           AND qa3.gptindex = 1) AS total_with_gpt,
+
+        -- ================= WITHOUT GPT =================
+
+        (SELECT CONCAT(
+                CAST(AVG(r2.AfterQuestionSys) AS INT),
+                '/',
+                CAST(AVG(r2.AfterQuestionDIA) AS INT))
+         FROM QuestionAttempt qa2
+         JOIN Reports r2 
+             ON qa2.QuestionAttemptID = r2.QuestionAttemptID
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 0) AS bp_without_gpt,
+
+        (SELECT CAST(AVG(r2.HR) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa2
+         JOIN Reports r2 
+             ON qa2.QuestionAttemptID = r2.QuestionAttemptID
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 0) AS avg_hr_without_gpt,
+
+        (SELECT CAST(AVG(r2.SDNN) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa2
+         JOIN Reports r2 
+             ON qa2.QuestionAttemptID = r2.QuestionAttemptID
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 0) AS avg_sdnn_without_gpt,
+
+        (SELECT CAST(AVG(r2.RMSSD) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa2
+         JOIN Reports r2 
+             ON qa2.QuestionAttemptID = r2.QuestionAttemptID
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 0) AS avg_rmssd_without_gpt,
+
+        (SELECT CAST(AVG(r2.SI) AS DECIMAL(10,2))
+         FROM QuestionAttempt qa2
+         JOIN Reports r2 
+             ON qa2.QuestionAttemptID = r2.QuestionAttemptID
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 0) AS avg_si_without_gpt,
+
+        (SELECT COUNT(*) 
+         FROM QuestionAttempt qa2
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 0) AS total_without_gpt,
+
+        (SELECT TOP 1 r2.stresslevel
+         FROM QuestionAttempt qa2
+         JOIN Reports r2 
+             ON qa2.QuestionAttemptID = r2.QuestionAttemptID
+         WHERE qa2.qid = q.qid
+           AND qa2.gptindex = 0
+         GROUP BY r2.stresslevel
+         ORDER BY COUNT(*) DESC) 
+         AS most_common_stress_level_without_gpt
+
+    FROM Question q
+    WHERE q.qid = ?
+    """
+
+    cursor.execute(query, (qid,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "Question not found"}), 404
+
+    response = {
+        "qid": row[0],
+        "description": row[1],
+        "duration": row[2],
+        "total_attempts": row[3],
+
+        "with_gpt": {
+            "avg_bp": row[4],
+            "avg_hr": row[5],
+            "avg_sdnn": row[6],
+            "avg_rmssd": row[7],
+            "avg_si": row[8],
+            "most_common_stress_level": row[9],
+            "total_attempts": row[10],
+        },
+
+        "without_gpt": {
+            "avg_bp": row[11],
+            "avg_hr": row[12],
+            "avg_sdnn": row[13],
+            "avg_rmssd": row[14],
+            "avg_si": row[15],
+            "total_attempts": row[16],
+            "most_common_stress_level": row[17],
+        }
+    }
+
+    return jsonify(response), 200
