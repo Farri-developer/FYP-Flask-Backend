@@ -4,7 +4,7 @@ from routes.question_routes import question_bp
 from routes.admin_routes import admin_BP
 from routes.report_routes import report_bp
 from routes.EEG_PPG import health_api  # << Add this
-from routes.deviceApi.bpApi import devices_api
+from routes.deviceApi.session import devices_api
 
 app = Flask(__name__)
 

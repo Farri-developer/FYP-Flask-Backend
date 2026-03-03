@@ -114,129 +114,31 @@ def start_stream():
 # =====================================================
 @devices_api.route("/start_session_bp", methods=["POST"])
 def start_session_bp():
+        global baseline_sys, baseline_dia, baseline_pulse, baseline_time
 
-    global current_session_id, current_question_attempt_id
-    global current_session_folder
-    global baseline_sys, baseline_dia, baseline_pulse
-    global baseline_time
-    global bp_csv_path
 
-    data = request.get_json()
-    sid = data.get("sid")
-    qid = data.get("qid")
+        # Read baseline only
+        try:
+            result = read_bp()
+        except Exception as e:
+            return jsonify({"error": f"BP device error: {str(e)}"}), 500
 
-    if not sid or not qid:
-        return jsonify({"error": "sid and qid required"}), 400
+        baseline_sys = result["SYS"]
+        baseline_dia = result["DIA"]
+        baseline_pulse = result["PULSE"]
+        baseline_time = datetime.now()
 
-    # ===============================
-    # READ BASELINE BP
-    # ===============================
-    try:
-        result = read_bp()
-    except Exception as e:
-        return jsonify({"error": f"BP device error: {str(e)}"}), 500
-
-    baseline_sys = result["SYS"]
-    baseline_dia = result["DIA"]
-    baseline_pulse = result["PULSE"]
-    baseline_time = datetime.now()
-
-    # ===============================
-    # DATABASE START
-    # ===============================
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Insert Session
-    cursor.execute("""
-        INSERT INTO Session (sid, starttime)
-        OUTPUT INSERTED.sessionid
-        VALUES (?, GETDATE())
-    """, (sid,))
-    current_session_id = cursor.fetchone()[0]
-
-    # ===============================
-    # CREATE SESSION FOLDER
-    # ===============================
-    os.makedirs(BASE_PATH, exist_ok=True)
-
-    folder_name = f"{sid}&{current_session_id}&{qid}"
-    current_session_folder = os.path.join(BASE_PATH, folder_name)
-    os.makedirs(current_session_folder, exist_ok=True)
-
-    # ===============================
-    # CREATE BP CSV FILE
-    # ===============================
-    bp_csv_path = os.path.join(current_session_folder, "bp.csv")
-
-    with open(bp_csv_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "time",
-            "label",
-            "SYS",
-            "DIA",
-            "PULSE",
-            "DeltaSYS",
-            "DeltaDIA",
-            "DeltaPulse"
-        ])
-        writer.writerow([
-            baseline_time.strftime("%H:%M:%S"),
-            "Baseline",
-            baseline_sys,
-            baseline_dia,
-            baseline_pulse,
-            0,
-            0,
-            0
-        ])
-
-    # ===============================
-    # INSERT QUESTION ATTEMPT (FIRST QUESTION)
-    # ===============================
-    cursor.execute("""
-        INSERT INTO QuestionAttempt 
-        (sessionid, sid, qid, bppath)
-        OUTPUT INSERTED.QuestionAttemptID
-        VALUES (?, ?, ?, ?)
-    """, (
-        current_session_id,
-        sid,
-        qid,
-        bp_csv_path
-    ))
-
-    current_question_attempt_id = cursor.fetchone()[0]
-
-    # ===============================
-    # INSERT REPORT ROW
-    # ===============================
-    cursor.execute("""
-        INSERT INTO Reports 
-        (sessionid, QuestionAttemptID, qid, sid, BaselineSYS, BaselineDIA)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        current_session_id,
-        current_question_attempt_id,
-        qid,
-        sid,
-        baseline_sys,
-        baseline_dia
-    ))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({
-        "status": "baseline saved",
-        "sessionid": current_session_id,
-        "QuestionAttemptID": current_question_attempt_id
-    }), 200
+        return jsonify({
+            "status": "baseline captured",
+            "SYS": baseline_sys,
+            "DIA": baseline_dia,
+            "PULSE": baseline_pulse
+        }), 200
 
 # =====================================================
 # START RECORDING (FIRST QUESTION ONLY)
 # =====================================================
+
 @devices_api.route("/start_recording", methods=["POST"])
 def start_recording():
 
@@ -246,15 +148,30 @@ def start_recording():
     global current_session_folder
     global question_start_time
     global baseline_sys, baseline_dia, baseline_pulse, baseline_time
+    global current_session_id
 
     data = request.get_json()
     sid = data.get("sid")
     qid = data.get("qid")
 
-    if not current_session_id:
-        return jsonify({"error": "Session not started"}), 400
+    if not sid or not qid:
+        return jsonify({"error": "sid and qid required"}), 400
 
-    question_start_time = datetime.now()
+    # 🔴 Baseline check
+    if baseline_sys is None:
+        return jsonify({"error": "Baseline not captured"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Create session only first time
+    if current_session_id is None:
+        cursor.execute("""
+            INSERT INTO Session (sid, starttime)
+            OUTPUT INSERTED.sessionid
+            VALUES (?, GETDATE())
+        """, (sid,))
+        current_session_id = cursor.fetchone()[0]
 
     # ==========================================
     # CREATE QUESTION FOLDER
@@ -263,40 +180,27 @@ def start_recording():
         BASE_PATH,
         f"{sid}&{current_session_id}&{qid}"
     )
-
     os.makedirs(current_session_folder, exist_ok=True)
 
     # ==========================================
-    # CREATE BP FILE FIRST (IMPORTANT)
+    # CREATE BP FILE
     # ==========================================
     bp_csv_path = os.path.join(current_session_folder, "bp.csv")
 
     with open(bp_csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-
         writer.writerow([
-            "time",
-            "label",
-            "SYS",
-            "DIA",
-            "PULSE",
-            "DeltaSYS",
-            "DeltaDIA",
-            "DeltaPulse"
+            "time","label","SYS","DIA","PULSE",
+            "DeltaSYS","DeltaDIA","DeltaPulse"
         ])
-
-        # Insert latest global baseline
-        if baseline_sys is not None:
-            writer.writerow([
-                baseline_time.strftime("%H:%M:%S") if baseline_time else "",
-                "Baseline",
-                baseline_sys,
-                baseline_dia,
-                baseline_pulse,
-                0,
-                0,
-                0
-            ])
+        writer.writerow([
+            baseline_time.strftime("%H:%M:%S") if baseline_time else "",
+            "Baseline",
+            baseline_sys,
+            baseline_dia,
+            baseline_pulse,
+            0,0,0
+        ])
 
     # ==========================================
     # CREATE EEG + PPG FILES
@@ -313,17 +217,25 @@ def start_recording():
     # ==========================================
     # INSERT QUESTION ATTEMPT
     # ==========================================
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
     cursor.execute("""
-        INSERT INTO QuestionAttempt (sessionid, sid, qid, bppath)
+        INSERT INTO QuestionAttempt 
+        (sessionid, sid, qid, bppath, eegpath, ppgpath)
         OUTPUT INSERTED.QuestionAttemptID
-        VALUES (?, ?, ?, ?)
-    """, (current_session_id, sid, qid, bp_csv_path))
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        current_session_id,
+        sid,
+        qid,
+        bp_csv_path,
+        eeg_file_path,
+        ppg_file_path
+    ))
 
     current_question_attempt_id = cursor.fetchone()[0]
 
+    # ==========================================
+    # INSERT REPORT (Baseline saved here only)
+    # ==========================================
     cursor.execute("""
         INSERT INTO Reports
         (sessionid, QuestionAttemptID, qid, sid, BaselineSYS, BaselineDIA)
@@ -343,6 +255,7 @@ def start_recording():
     # ==========================================
     # START RECORDING THREAD
     # ==========================================
+    question_start_time = datetime.now()
     recording = True
 
     def record_loop():
@@ -354,19 +267,27 @@ def start_recording():
             pw = csv.writer(pf)
 
             while recording:
-                e_sample, ts1 = eeg_inlet.pull_sample(timeout=0.0)
-                if e_sample:
-                    ew.writerow([ts1] + e_sample[:4])
+                try:
+                    if eeg_inlet:
+                        e_sample, ts1 = eeg_inlet.pull_sample(timeout=0.0)
+                        if e_sample:
+                            ew.writerow([ts1] + e_sample[:4])
 
-                p_sample, ts2 = ppg_inlet.pull_sample(timeout=0.0)
-                if p_sample:
-                    pw.writerow([ts2] + p_sample[:3])
+                    if ppg_inlet:
+                        p_sample, ts2 = ppg_inlet.pull_sample(timeout=0.0)
+                        if p_sample:
+                            pw.writerow([ts2] + p_sample[:3])
+                except:
+                    pass
 
-    record_thread = threading.Thread(target=record_loop)
+    record_thread = threading.Thread(target=record_loop, daemon=True)
     record_thread.start()
 
-    return jsonify({"status": "recording started"}), 200
-
+    return jsonify({
+        "status": "recording started",
+        "sessionid": current_session_id,
+        "QuestionAttemptID": current_question_attempt_id
+    }), 200
 
 # =====================================================
 # STOP RECORDING (COMMON)
@@ -392,13 +313,11 @@ def stop_recording_common():
 
     cursor.execute("""
         UPDATE QuestionAttempt
-        SET Answers=?, gptindex=?, eegpath=?, ppgpath=?
+        SET Answers=?, gptindex=?
         WHERE QuestionAttemptID=?
     """, (
         answers,
         gptindex,
-        eeg_file_path,
-        ppg_file_path,
         current_question_attempt_id
     ))
 
@@ -493,6 +412,12 @@ def after_question_bp():
 
     return jsonify({
         "status": "after question saved",
+        "SYS": after_sys,
+        "DIA": after_dia,
+        "PULSE": after_pulse,
+        "DeltaSYS": delta_sys,
+        "DeltaDIA": delta_dia,
+        "DeltaPulse": delta_pulse,
         "TimeTaken": time_taken
     }), 200
 # =====================================================
@@ -569,6 +494,7 @@ def stop_stream():
     baseline_sys = None
     baseline_dia = None
     baseline_pulse = None
+    current_session_id = None
 
     return jsonify({
         "status": "stream stopped and session ended"
