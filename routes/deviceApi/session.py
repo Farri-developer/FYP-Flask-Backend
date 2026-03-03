@@ -494,10 +494,59 @@ def stop_stream():
     baseline_sys = None
     baseline_dia = None
     baseline_pulse = None
-    current_session_id = None
+
 
     return jsonify({
         "status": "stream stopped and session ended"
     }), 200
 
 
+# =====================================================
+# SELF REPORT (USING GLOBAL SESSION)
+# =====================================================
+@devices_api.route("/selfreport", methods=["POST"])
+def selfreport():
+
+    global current_session_id
+
+    if current_session_id is None:
+        return jsonify({"error": "No active session"}), 400
+
+    data = request.get_json()
+
+    mental_load = data.get("MentalLoad")
+    frustration = data.get("Frustration")
+    effort = data.get("Effort")
+    comment = data.get("Comment")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE Session
+        SET MentalLoad = ?,
+            Frustration = ?,
+            Effort = ?,
+            Comment = ?
+        WHERE sessionid = ?
+    """, (
+        mental_load,
+        frustration,
+        effort,
+        comment,
+        current_session_id
+    ))
+
+    conn.commit()
+    conn.close()
+
+    # ✅ Save session id before resetting
+    saved_session_id = current_session_id
+
+    # ✅ Now reset session
+    current_session_id = None
+
+    return jsonify({
+        "status": "self report saved",
+        "sessionid": saved_session_id
+    }), 200
