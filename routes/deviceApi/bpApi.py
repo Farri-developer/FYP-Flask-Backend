@@ -15,14 +15,17 @@ BP_ADDRESS = "18:7A:93:12:26:AE"
 BP_UUID = "00002a35-0000-1000-8000-00805f9b34fb"
 
 # =====================================================
-# GLOBAL VARIABLES
+# GLOBAL STATE
 # =====================================================
 proc = None
 eeg_inlet = None
 ppg_inlet = None
 
+
 recording = False
 record_thread = None
+
+question_start_time = None
 
 current_session_id = None
 current_question_attempt_id = None
@@ -31,19 +34,21 @@ current_session_folder = None
 baseline_sys = None
 baseline_dia = None
 baseline_pulse = None
+baseline_time = None
+
 bp_csv_path = None
 eeg_file_path = None
 ppg_file_path = None
 
 
 # =====================================================
-# BP DECODER
+# BP READER (COMMON)
 # =====================================================
 def decode_bp(data):
     flags = data[0]
-    systolic  = int.from_bytes(data[1:3], "little")
+    systolic = int.from_bytes(data[1:3], "little")
     diastolic = int.from_bytes(data[3:5], "little")
-    mean_art  = int.from_bytes(data[5:7], "little")
+    mean_art = int.from_bytes(data[5:7], "little")
     idx = 7
     if flags & 0x02:
         idx += 7
@@ -53,59 +58,59 @@ def decode_bp(data):
     return systolic, diastolic, mean_art, pulse
 
 
+async def async_read_bp():
+    async with BleakClient(BP_ADDRESS, timeout=20) as client:
+        result = {}
+        event = asyncio.Event()
+
+        def handler(sender, data):
+            nonlocal result
+            sys_v, dia, map_v, pulse = decode_bp(data)
+            result = {"SYS": sys_v, "DIA": dia, "PULSE": pulse}
+            event.set()
+
+        await client.start_notify(BP_UUID, handler)
+        await asyncio.wait_for(event.wait(), timeout=60)
+        await client.stop_notify(BP_UUID)
+        return result
+
+
+def read_bp():
+    return asyncio.run(async_read_bp())
+
+
 # =====================================================
 # START STREAM
-# URL: http://127.0.0.1:5000/api/devices/start_stream
 # =====================================================
-
 @devices_api.route("/start_stream", methods=["POST"])
 def start_stream():
-
     global proc, eeg_inlet, ppg_inlet
 
-    if proc:
+    if eeg_inlet and ppg_inlet:
         return jsonify({"status": "already running"}), 200
 
-    try:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "muselsl", "stream", "--ppg"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "muselsl", "stream", "--ppg"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
 
-        time.sleep(8)
+    time.sleep(8)
 
-        # 🔵 Resolve EEG
-        eeg_streams = resolve_byprop("type", "EEG", timeout=10)
-        if not eeg_streams:
-            proc.terminate()
-            proc = None
-            return jsonify({"error": "EEG stream not found"}), 500
+    eeg_streams = resolve_byprop("type", "EEG", timeout=10)
+    ppg_streams = resolve_byprop("type", "PPG", timeout=10)
 
-        # 🟢 Resolve PPG
-        ppg_streams = resolve_byprop("type", "PPG", timeout=10)
-        if not ppg_streams:
-            proc.terminate()
-            proc = None
-            return jsonify({"error": "PPG stream not found"}), 500
+    if not eeg_streams or not ppg_streams:
+        return jsonify({"error": "EEG/PPG stream not found"}), 500
 
-        eeg_inlet = StreamInlet(eeg_streams[0])
-        ppg_inlet = StreamInlet(ppg_streams[0])
+    eeg_inlet = StreamInlet(eeg_streams[0])
+    ppg_inlet = StreamInlet(ppg_streams[0])
 
-        return jsonify({
-            "status": "success",
-            "message": "EEG & PPG connected"
-        }), 200
+    return jsonify({"status": "stream started"}), 200
 
-    except Exception as e:
-        if proc:
-            proc.terminate()
-            proc = None
-        return jsonify({"error": str(e)}), 500
 
 # =====================================================
-# START SESSION + BASELINE BP
-# URL: http://127.0.0.1:5000/api/devices/start_session_bp
+# START SESSION + BASELINE
 # =====================================================
 @devices_api.route("/start_session_bp", methods=["POST"])
 def start_session_bp():
@@ -113,6 +118,7 @@ def start_session_bp():
     global current_session_id, current_question_attempt_id
     global current_session_folder
     global baseline_sys, baseline_dia, baseline_pulse
+    global baseline_time
     global bp_csv_path
 
     data = request.get_json()
@@ -122,28 +128,22 @@ def start_session_bp():
     if not sid or not qid:
         return jsonify({"error": "sid and qid required"}), 400
 
-    async def read_bp():
-        async with BleakClient(BP_ADDRESS, timeout=20) as client:
-            result = {}
-            event = asyncio.Event()
-
-            def handler(sender, data):
-                nonlocal result
-                sys_v, dia, map_v, pulse = decode_bp(data)
-                result = {"SYS": sys_v, "DIA": dia, "PULSE": pulse}
-                event.set()
-
-            await client.start_notify(BP_UUID, handler)
-            await asyncio.wait_for(event.wait(), timeout=60)
-            await client.stop_notify(BP_UUID)
-            return result
-
-    result = asyncio.run(read_bp())
+    # ===============================
+    # READ BASELINE BP
+    # ===============================
+    try:
+        result = read_bp()
+    except Exception as e:
+        return jsonify({"error": f"BP device error: {str(e)}"}), 500
 
     baseline_sys = result["SYS"]
     baseline_dia = result["DIA"]
     baseline_pulse = result["PULSE"]
+    baseline_time = datetime.now()
 
+    # ===============================
+    # DATABASE START
+    # ===============================
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -155,45 +155,70 @@ def start_session_bp():
     """, (sid,))
     current_session_id = cursor.fetchone()[0]
 
-    # Create folder
+    # ===============================
+    # CREATE SESSION FOLDER
+    # ===============================
     os.makedirs(BASE_PATH, exist_ok=True)
+
     folder_name = f"{sid}&{current_session_id}&{qid}"
     current_session_folder = os.path.join(BASE_PATH, folder_name)
     os.makedirs(current_session_folder, exist_ok=True)
 
-    # Save BP CSV
+    # ===============================
+    # CREATE BP CSV FILE
+    # ===============================
     bp_csv_path = os.path.join(current_session_folder, "bp.csv")
 
     with open(bp_csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "time","label","SYS","DIA",
-            "PULSE","DeltaSYS","DeltaDIA","DeltaPulse"
+            "time",
+            "label",
+            "SYS",
+            "DIA",
+            "PULSE",
+            "DeltaSYS",
+            "DeltaDIA",
+            "DeltaPulse"
         ])
         writer.writerow([
-            datetime.now().strftime("%H:%M:%S"),
+            baseline_time.strftime("%H:%M:%S"),
             "Baseline",
             baseline_sys,
             baseline_dia,
             baseline_pulse,
-            0,0,0
+            0,
+            0,
+            0
         ])
 
-    # Insert QuestionAttempt
+    # ===============================
+    # INSERT QUESTION ATTEMPT (FIRST QUESTION)
+    # ===============================
     cursor.execute("""
-        INSERT INTO QuestionAttempt (sessionid, sid, qid, bppath)
+        INSERT INTO QuestionAttempt 
+        (sessionid, sid, qid, bppath)
         OUTPUT INSERTED.QuestionAttemptID
         VALUES (?, ?, ?, ?)
-    """, (current_session_id, sid, qid, bp_csv_path))
+    """, (
+        current_session_id,
+        sid,
+        qid,
+        bp_csv_path
+    ))
 
     current_question_attempt_id = cursor.fetchone()[0]
 
-    # Insert Reports baseline
+    # ===============================
+    # INSERT REPORT ROW
+    # ===============================
     cursor.execute("""
-        INSERT INTO Reports (sessionid, qid, sid, BaselineSYS, BaselineDIA)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO Reports 
+        (sessionid, QuestionAttemptID, qid, sid, BaselineSYS, BaselineDIA)
+        VALUES (?, ?, ?, ?, ?, ?)
     """, (
         current_session_id,
+        current_question_attempt_id,
         qid,
         sid,
         baseline_sys,
@@ -203,34 +228,125 @@ def start_session_bp():
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "baseline saved"}), 200
-
+    return jsonify({
+        "status": "baseline saved",
+        "sessionid": current_session_id,
+        "QuestionAttemptID": current_question_attempt_id
+    }), 200
 
 # =====================================================
-# START RECORDING
-# URL: http://127.0.0.1:5000/api/devices/start_recording
+# START RECORDING (FIRST QUESTION ONLY)
 # =====================================================
 @devices_api.route("/start_recording", methods=["POST"])
 def start_recording():
 
     global recording, record_thread
-    global eeg_file_path, ppg_file_path
+    global eeg_file_path, ppg_file_path, bp_csv_path
+    global current_question_attempt_id
+    global current_session_folder
+    global question_start_time
+    global baseline_sys, baseline_dia, baseline_pulse, baseline_time
 
-    if not current_session_folder:
-        return jsonify({"error": "start session first"}), 400
+    data = request.get_json()
+    sid = data.get("sid")
+    qid = data.get("qid")
 
+    if not current_session_id:
+        return jsonify({"error": "Session not started"}), 400
+
+    question_start_time = datetime.now()
+
+    # ==========================================
+    # CREATE QUESTION FOLDER
+    # ==========================================
+    current_session_folder = os.path.join(
+        BASE_PATH,
+        f"{sid}&{current_session_id}&{qid}"
+    )
+
+    os.makedirs(current_session_folder, exist_ok=True)
+
+    # ==========================================
+    # CREATE BP FILE FIRST (IMPORTANT)
+    # ==========================================
+    bp_csv_path = os.path.join(current_session_folder, "bp.csv")
+
+    with open(bp_csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+
+        writer.writerow([
+            "time",
+            "label",
+            "SYS",
+            "DIA",
+            "PULSE",
+            "DeltaSYS",
+            "DeltaDIA",
+            "DeltaPulse"
+        ])
+
+        # Insert latest global baseline
+        if baseline_sys is not None:
+            writer.writerow([
+                baseline_time.strftime("%H:%M:%S") if baseline_time else "",
+                "Baseline",
+                baseline_sys,
+                baseline_dia,
+                baseline_pulse,
+                0,
+                0,
+                0
+            ])
+
+    # ==========================================
+    # CREATE EEG + PPG FILES
+    # ==========================================
     eeg_file_path = os.path.join(current_session_folder, "eeg.csv")
     ppg_file_path = os.path.join(current_session_folder, "ppg.csv")
 
     with open(eeg_file_path, "w", newline="") as f:
-        csv.writer(f).writerow(["lsl_timestamp","EEG1","EEG2","EEG3","EEG4"])
+        csv.writer(f).writerow(["timestamp","EEG1","EEG2","EEG3","EEG4"])
 
     with open(ppg_file_path, "w", newline="") as f:
-        csv.writer(f).writerow(["lsl_timestamp","PPG1","PPG2","PPG3"])
+        csv.writer(f).writerow(["timestamp","PPG1","PPG2","PPG3"])
 
+    # ==========================================
+    # INSERT QUESTION ATTEMPT
+    # ==========================================
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO QuestionAttempt (sessionid, sid, qid, bppath)
+        OUTPUT INSERTED.QuestionAttemptID
+        VALUES (?, ?, ?, ?)
+    """, (current_session_id, sid, qid, bp_csv_path))
+
+    current_question_attempt_id = cursor.fetchone()[0]
+
+    cursor.execute("""
+        INSERT INTO Reports
+        (sessionid, QuestionAttemptID, qid, sid, BaselineSYS, BaselineDIA)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        current_session_id,
+        current_question_attempt_id,
+        qid,
+        sid,
+        baseline_sys,
+        baseline_dia
+    ))
+
+    conn.commit()
+    conn.close()
+
+    # ==========================================
+    # START RECORDING THREAD
+    # ==========================================
     recording = True
 
     def record_loop():
+        global recording
         with open(eeg_file_path, "a", newline="") as ef, \
              open(ppg_file_path, "a", newline="") as pf:
 
@@ -247,132 +363,215 @@ def start_recording():
                     pw.writerow([ts2] + p_sample[:3])
 
     record_thread = threading.Thread(target=record_loop)
-    record_thread.daemon = True
     record_thread.start()
 
     return jsonify({"status": "recording started"}), 200
 
 
 # =====================================================
-# STOP RECORDING + SAVE ANSWER
-# URL: http://127.0.0.1:5000/api/devices/stop_recording
+# STOP RECORDING (COMMON)
 # =====================================================
 @devices_api.route("/stop_recording", methods=["POST"])
-def stop_recording():
+@devices_api.route("/stop_recording_question", methods=["POST"])
+def stop_recording_common():
 
-    global recording
+    global recording, record_thread
 
     data = request.get_json()
-    answer = data.get("answer")
+
+    answers = data.get("answers") or data.get("answer")
     gptindex = data.get("gptindex")
 
     recording = False
+
+    if record_thread:
+        record_thread.join()
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
         UPDATE QuestionAttempt
-        SET eegpath=?, ppgpath=?, Answers=?, gptindex=?
+        SET Answers=?, gptindex=?, eegpath=?, ppgpath=?
         WHERE QuestionAttemptID=?
     """, (
+        answers,
+        gptindex,
         eeg_file_path,
         ppg_file_path,
-        answer,
-        gptindex,
         current_question_attempt_id
     ))
 
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "recording stopped & updated"}), 200
+    return jsonify({"status": "recording stopped"}), 200
 
 
 # =====================================================
 # AFTER QUESTION BP
-# URL: http://127.0.0.1:5000/api/devices/after_question_bp
 # =====================================================
+
 @devices_api.route("/after_question_bp", methods=["POST"])
 def after_question_bp():
 
-    global baseline_sys, baseline_dia, baseline_pulse
+    global question_start_time
+    global current_question_attempt_id
+    global baseline_sys, baseline_dia, baseline_pulse, baseline_time
+    global bp_csv_path
 
-    async def read_bp():
-        async with BleakClient(BP_ADDRESS, timeout=20) as client:
-            result = {}
-            event = asyncio.Event()
+    if not current_question_attempt_id:
+        return jsonify({"error": "No active question"}), 400
 
-            def handler(sender, data):
-                nonlocal result
-                sys_v, dia, map_v, pulse = decode_bp(data)
-                result = {"SYS": sys_v, "DIA": dia, "PULSE": pulse}
-                event.set()
+    try:
+        result = read_bp()
+    except Exception as e:
+        return jsonify({"error": f"BP read failed: {str(e)}"}), 500
 
-            await client.start_notify(BP_UUID, handler)
-            await asyncio.wait_for(event.wait(), timeout=60)
-            await client.stop_notify(BP_UUID)
-            return result
+    after_sys = result["SYS"]
+    after_dia = result["DIA"]
+    after_pulse = result["PULSE"]
 
-    result = asyncio.run(read_bp())
+    after_time = datetime.now()
 
-    delta_sys = result["SYS"] - baseline_sys
-    delta_dia = result["DIA"] - baseline_dia
-    delta_pulse = result["PULSE"] - baseline_pulse
+    time_taken = int((after_time - question_start_time).total_seconds())
 
-    # Append CSV
+    # ==========================================
+    # CALCULATE DELTA
+    # ==========================================
+    delta_sys = after_sys - baseline_sys
+    delta_dia = after_dia - baseline_dia
+    delta_pulse = after_pulse - baseline_pulse
+
+    # ==========================================
+    # APPEND TO BP FILE
+    # ==========================================
     with open(bp_csv_path, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            datetime.now().strftime("%H:%M:%S"),
+            after_time.strftime("%H:%M:%S"),
             "Question-End",
-            result["SYS"],
-            result["DIA"],
-            result["PULSE"],
+            after_sys,
+            after_dia,
+            after_pulse,
             delta_sys,
             delta_dia,
             delta_pulse
         ])
 
-    # Update Reports
+    # ==========================================
+    # UPDATE DATABASE
+    # ==========================================
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
         UPDATE Reports
-        SET AfterQuestionSYS=?, AfterQuestionDIA=?
-        WHERE sessionid=?
+        SET AfterQuestionSYS=?,
+            AfterQuestionDIA=?,
+            TimeTaken=?
+        WHERE QuestionAttemptID=?
     """, (
-        result["SYS"],
-        result["DIA"],
-        current_session_id
+        after_sys,
+        after_dia,
+        time_taken,
+        current_question_attempt_id
     ))
 
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "after question bp saved"}), 200
+    # ==========================================
+    # UPDATE GLOBAL BASELINE FOR NEXT QUESTION
+    # ==========================================
+    baseline_sys = after_sys
+    baseline_dia = after_dia
+    baseline_pulse = after_pulse
+    baseline_time = after_time
 
+    current_question_attempt_id = None
 
+    return jsonify({
+        "status": "after question saved",
+        "TimeTaken": time_taken
+    }), 200
 # =====================================================
-# STOP STREAM
-# URL: http://127.0.0.1:5000/api/devices/stop_stream
+# STOP STREAM + END SESSION (SAFE VERSION)
 # =====================================================
+
 @devices_api.route("/stop_stream", methods=["POST"])
 def stop_stream():
 
     global proc, eeg_inlet, ppg_inlet
+    global current_session_id
+    global recording, record_thread
+    global question_start_time
 
-    if eeg_inlet:
-        eeg_inlet.close_stream()
-        eeg_inlet = None
+    # ===============================
+    # STOP RECORDING IF STILL RUNNING
+    # ===============================
+    recording = False
 
-    if ppg_inlet:
-        ppg_inlet.close_stream()
-        ppg_inlet = None
+    if record_thread:
+        record_thread.join(timeout=2)
+        record_thread = None
 
-    if proc:
-        proc.terminate()
-        proc = None
+    # ===============================
+    # CLOSE LSL STREAMS SAFELY
+    # ===============================
+    try:
+        if eeg_inlet:
+            eeg_inlet.close_stream()
+            eeg_inlet = None
+    except:
+        pass
 
-    return jsonify({"status": "stream stopped"}), 200
+    try:
+        if ppg_inlet:
+            ppg_inlet.close_stream()
+            ppg_inlet = None
+    except:
+        pass
+
+    # ===============================
+    # TERMINATE MUSE PROCESS
+    # ===============================
+    try:
+        if proc:
+            proc.terminate()
+            proc.wait(timeout=5)
+            proc = None
+    except:
+        pass
+
+    # ===============================
+    # UPDATE SESSION END TIME
+    # ===============================
+    if current_session_id:
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE Session
+            SET endtime = ?
+            WHERE sessionid = ?
+        """, (datetime.now(), current_session_id))
+
+        conn.commit()
+        conn.close()
+
+    # ===============================
+    # RESET SESSION VARIABLES
+    # ===============================
+
+    current_question_attempt_id = None
+    baseline_sys = None
+    baseline_dia = None
+    baseline_pulse = None
+
+    return jsonify({
+        "status": "stream stopped and session ended"
+    }), 200
+
+
