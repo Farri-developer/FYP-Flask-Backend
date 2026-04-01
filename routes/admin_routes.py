@@ -9,33 +9,32 @@ admin_BP = Blueprint("admin", __name__)
 @admin_BP.route("", methods=["POST"])
 def login():
     data = request.json
-    users = data.get("users")        # username / regno
-    passwords = data.get("passwords")
+    users = data.get('users')
+    password = data.get('passwords')
 
+    # Admin login
+    if users == "admin" and password == "1234":
+        return jsonify({"role": "admin", "message": "Admin Login Successfully"})
 
-    if users == "admin" and passwords == "1234":
-        return jsonify({
-            "role": "admin",
-        })
-
-
+    # Student login
     conn = get_db_connection()
     cursor = conn.cursor()
-
     cursor.execute("""
-        SELECT sid, regno, name
-        FROM Student
-        WHERE regno = ? AND password = ?
-    """, (users, passwords))
+        SELECT sId, Regno, Name ,semester FROM Student 
+        WHERE Regno = ? AND Password = ?
+    """, (users, password))
 
     row = cursor.fetchone()
     conn.close()
 
     if row:
         return jsonify({
-            "role": "student",
-            'sid': row[0],
+            'role': 'student',
+            'message': 'Login Successfully',
+            'sId': row[0],
+            'regno': row[1],
+            'name': row[2],
+            'semester' : row[3]
         })
 
-
-    return jsonify({"error": "Invalid Credentials"}), 401
+    return jsonify({'message': 'Invalid Credentials!'}), 401

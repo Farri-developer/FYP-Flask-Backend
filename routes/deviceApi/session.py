@@ -21,7 +21,6 @@ proc = None
 eeg_inlet = None
 ppg_inlet = None
 
-
 recording = False
 record_thread = None
 
@@ -54,7 +53,7 @@ def decode_bp(data):
         idx += 7
     pulse = None
     if flags & 0x04:
-        pulse = int.from_bytes(data[idx:idx+2], "little")
+        pulse = int.from_bytes(data[idx:idx + 2], "little")
     return systolic, diastolic, mean_art, pulse
 
 
@@ -114,26 +113,26 @@ def start_stream():
 # =====================================================
 @devices_api.route("/start_session_bp", methods=["POST"])
 def start_session_bp():
-        global baseline_sys, baseline_dia, baseline_pulse, baseline_time
+    global baseline_sys, baseline_dia, baseline_pulse, baseline_time
 
+    # Read baseline only
+    try:
+        result = read_bp()
+    except Exception as e:
+        return jsonify({"error": f"BP device error: {str(e)}"}), 500
 
-        # Read baseline only
-        try:
-            result = read_bp()
-        except Exception as e:
-            return jsonify({"error": f"BP device error: {str(e)}"}), 500
+    baseline_sys = result["SYS"]
+    baseline_dia = result["DIA"]
+    baseline_pulse = result["PULSE"]
+    baseline_time = datetime.now()
 
-        baseline_sys = result["SYS"]
-        baseline_dia = result["DIA"]
-        baseline_pulse = result["PULSE"]
-        baseline_time = datetime.now()
+    return jsonify({
+        "status": "baseline captured",
+        "SYS": baseline_sys,
+        "DIA": baseline_dia,
+        "PULSE": baseline_pulse
+    }), 200
 
-        return jsonify({
-            "status": "baseline captured",
-            "SYS": baseline_sys,
-            "DIA": baseline_dia,
-            "PULSE": baseline_pulse
-        }), 200
 
 # =====================================================
 # START RECORDING (FIRST QUESTION ONLY)
@@ -141,7 +140,6 @@ def start_session_bp():
 
 @devices_api.route("/start_recording", methods=["POST"])
 def start_recording():
-
     global recording, record_thread
     global eeg_file_path, ppg_file_path, bp_csv_path
     global current_question_attempt_id
@@ -190,8 +188,8 @@ def start_recording():
     with open(bp_csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "time","label","SYS","DIA","PULSE",
-            "DeltaSYS","DeltaDIA","DeltaPulse"
+            "time", "label", "SYS", "DIA", "PULSE",
+            "DeltaSYS", "DeltaDIA", "DeltaPulse"
         ])
         writer.writerow([
             baseline_time.strftime("%H:%M:%S") if baseline_time else "",
@@ -199,7 +197,7 @@ def start_recording():
             baseline_sys,
             baseline_dia,
             baseline_pulse,
-            0,0,0
+            0, 0, 0
         ])
 
     # ==========================================
@@ -209,10 +207,10 @@ def start_recording():
     ppg_file_path = os.path.join(current_session_folder, "ppg.csv")
 
     with open(eeg_file_path, "w", newline="") as f:
-        csv.writer(f).writerow(["timestamp","EEG1","EEG2","EEG3","EEG4"])
+        csv.writer(f).writerow(["timestamp", "EEG1", "EEG2", "EEG3", "EEG4"])
 
     with open(ppg_file_path, "w", newline="") as f:
-        csv.writer(f).writerow(["timestamp","PPG1","PPG2","PPG3"])
+        csv.writer(f).writerow(["timestamp", "PPG1", "PPG2", "PPG3"])
 
     # ==========================================
     # INSERT QUESTION ATTEMPT
@@ -249,6 +247,18 @@ def start_recording():
         baseline_dia
     ))
 
+    # # ==========================================
+    # # increment question count
+    # # ==========================================
+    # cursor.execute("""
+    #        UPDATE Question
+    #        SET count = 3
+    #        WHERE qid = ? ;
+    #    """, (
+    #     qid,
+    #
+    # ))
+
     conn.commit()
     conn.close()
 
@@ -261,7 +271,7 @@ def start_recording():
     def record_loop():
         global recording
         with open(eeg_file_path, "a", newline="") as ef, \
-             open(ppg_file_path, "a", newline="") as pf:
+                open(ppg_file_path, "a", newline="") as pf:
 
             ew = csv.writer(ef)
             pw = csv.writer(pf)
@@ -289,13 +299,13 @@ def start_recording():
         "QuestionAttemptID": current_question_attempt_id
     }), 200
 
+
 # =====================================================
 # STOP RECORDING (COMMON)
 # =====================================================
 @devices_api.route("/stop_recording", methods=["POST"])
 @devices_api.route("/stop_recording_question", methods=["POST"])
 def stop_recording_common():
-
     global recording, record_thread
 
     data = request.get_json()
@@ -333,7 +343,6 @@ def stop_recording_common():
 
 @devices_api.route("/after_question_bp", methods=["POST"])
 def after_question_bp():
-
     global question_start_time
     global current_question_attempt_id
     global baseline_sys, baseline_dia, baseline_pulse, baseline_time
@@ -420,13 +429,14 @@ def after_question_bp():
         "DeltaPulse": delta_pulse,
         "TimeTaken": time_taken
     }), 200
+
+
 # =====================================================
 # STOP STREAM + END SESSION (SAFE VERSION)
 # =====================================================
 
 @devices_api.route("/stop_stream", methods=["POST"])
 def stop_stream():
-
     global proc, eeg_inlet, ppg_inlet
     global current_session_id
     global recording, record_thread
@@ -473,7 +483,6 @@ def stop_stream():
     # UPDATE SESSION END TIME
     # ===============================
     if current_session_id:
-
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -495,7 +504,6 @@ def stop_stream():
     baseline_dia = None
     baseline_pulse = None
 
-
     return jsonify({
         "status": "stream stopped and session ended"
     }), 200
@@ -506,7 +514,6 @@ def stop_stream():
 # =====================================================
 @devices_api.route("/selfreport", methods=["POST"])
 def selfreport():
-
     global current_session_id
 
     if current_session_id is None:
@@ -550,3 +557,84 @@ def selfreport():
         "status": "self report saved",
         "sessionid": saved_session_id
     }), 200
+
+
+# =====================================================
+# RESET ALL GLOBAL VARIABLES (FORCE CLEAN)
+# =====================================================
+
+@devices_api.route("/reset_all", methods=["POST"])
+def reset_all():
+    global proc, eeg_inlet, ppg_inlet
+    global recording, record_thread
+    global question_start_time
+    global current_session_id
+    global current_question_attempt_id
+    global current_session_folder
+    global baseline_sys, baseline_dia, baseline_pulse, baseline_time
+    global bp_csv_path, eeg_file_path, ppg_file_path
+
+    try:
+        # ===============================
+        # STOP RECORDING THREAD
+        # ===============================
+        recording = False
+        if record_thread:
+            record_thread.join(timeout=2)
+            record_thread = None
+
+        # ===============================
+        # CLOSE STREAMS
+        # ===============================
+        try:
+            if eeg_inlet:
+                eeg_inlet.close_stream()
+        except:
+            pass
+
+        try:
+            if ppg_inlet:
+                ppg_inlet.close_stream()
+        except:
+            pass
+
+        eeg_inlet = None
+        ppg_inlet = None
+
+        # ===============================
+        # STOP PROCESS
+        # ===============================
+        try:
+            if proc:
+                proc.terminate()
+                proc.wait(timeout=5)
+        except:
+            pass
+
+        proc = None
+
+        # ===============================
+        # RESET ALL VARIABLES
+        # ===============================
+        question_start_time = None
+        current_session_id = None
+        current_question_attempt_id = None
+        current_session_folder = None
+
+        baseline_sys = None
+        baseline_dia = None
+        baseline_pulse = None
+        baseline_time = None
+
+        bp_csv_path = None
+        eeg_file_path = None
+        ppg_file_path = None
+
+        return jsonify({
+            "status": "All globals reset successfully"
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500

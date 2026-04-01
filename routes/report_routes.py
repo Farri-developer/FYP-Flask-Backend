@@ -7,6 +7,8 @@ from database.db import get_db_connection
 
 report_bp = Blueprint("report", __name__)
 
+
+
 #1 Get All Reports By Student ID  Admin & Student Side
 #2 Get Top 5 Recent Reports By Student ID Student side
 #3 Get Unattempted Question For Student  easy  Student side
@@ -15,7 +17,7 @@ report_bp = Blueprint("report", __name__)
 #6 Question  Report By QID admin side
 #7 Student Session Report Student side
 #8 Student Question Report student side
-# 9 Question Report Admin (Combined Extended)
+#9 Question Report Admin (Combined Extended)
 
 
 
@@ -637,3 +639,46 @@ def qus_rep_admin(qid):
     }
 
     return jsonify(response), 200
+
+
+
+# ---------------- DELETE SESSION (Safe Delete) ----------------
+@report_bp.route("/delete_session/<int:sessionid>", methods=["DELETE"])
+def delete_session(sessionid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # ✅ Check if session exists
+        cursor.execute("SELECT sessionid FROM Session WHERE sessionid = ?", (sessionid,))
+        session = cursor.fetchone()
+
+        if not session:
+            conn.close()
+            return jsonify({
+                "message": "Session not found, nothing deleted"
+            }), 200   # ❗ no error
+
+        # ✅ Delete from child tables first (important)
+        cursor.execute("DELETE FROM Reports WHERE sessionid = ?", (sessionid,))
+        cursor.execute("DELETE FROM QuestionAttempt WHERE sessionid = ?", (sessionid,))
+
+        # ✅ Delete from Session table
+        cursor.execute("DELETE FROM Session WHERE sessionid = ?", (sessionid,))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "message": "Session deleted successfully"
+        }), 200
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+

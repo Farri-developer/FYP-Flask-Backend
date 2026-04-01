@@ -13,8 +13,7 @@ import numpy as np
 health_api = Blueprint("health_api", __name__)
 
 # Base path
-BASE_DIR = r"D:\DataSet"
-os.makedirs(BASE_DIR, exist_ok=True)
+BASE_DIR = r"../../../Data/Raw10.csv"
 
 # BP Device
 BP_ADDRESS = "18:7A:93:12:26:AE"
