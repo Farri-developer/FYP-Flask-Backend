@@ -4,21 +4,20 @@ import numpy as np
 from flask import Blueprint, request, jsonify
 from database.db import get_db_connection
 
-
 report_bp = Blueprint("report", __name__)
 
 
-
-#1 Get All Reports By Student ID  Admin & Student Side
-#2 Get Top 5 Recent Reports By Student ID Student side
-#3 Get Unattempted Question For Student  easy  Student side
-#4 Get Unattempted Question For Student  Hard  Student side
-#5 Get Unattempted Question For Student  Medium  Student side
-#6 Question  Report By QID admin side
-#7 Student Session Report Student side
-#8 Student Question Report student side
-#9 Question Report Admin (Combined Extended)
-
+# 1 Get All Reports By Student ID  Admin & Student Side
+# 2 Get Top 5 Recent Reports By Student ID Student side
+# 3 Get Unattempted Question For Student  easy  Student side
+# 4 Get Unattempted Question For Student  Hard  Student side
+# 5 Get Unattempted Question For Student  Medium  Student side
+# 6 Question  Report By QID admin side
+# 7 Student Session Report Student side
+# 8 Student Question Report student side
+# 9 Question Report Admin (Combined Extended)
+# 10 DELETE SESSION (Safe Delete)
+# 11 Get Self Report By Session
 
 
 # ----------------  1 Get All Reports By Student ID  Admin & Student Side----------------
@@ -30,36 +29,37 @@ def get_student_reports(sid):
     cursor.execute(
         """
         SELECT 
-        s.sessionid,
-        CONVERT(VARCHAR, s.endtime, 23) AS date,
+            s.sessionid,
 
-        CONCAT(
-            CAST(AVG(r.AfterQuestionsys) AS INT),
-            '/',
-            CAST(AVG(r.AfterQuestionDIA) AS INT)
-        ) AS bp,
+            CONVERT(VARCHAR, s.endtime, 120) AS datetime,
 
-        AVG(r.HR)   AS avg_hr,
-        AVG(r.SDNN) AS avg_sdnn,
+            CONCAT(
+                CAST(ROUND(AVG(r.AfterQuestionsys), 0) AS INT),
+                '/',
+                CAST(ROUND(AVG(r.AfterQuestionDIA), 0) AS INT)
+            ) AS bp,
 
-        -- Most common stress level in session
-        (
-         SELECT TOP 1 r2.stresslevel
-           FROM Reports r2
-            WHERE r2.sessionid = s.sessionid   -- ✅ FIX
-            GROUP BY r2.stresslevel
-            ORDER BY COUNT(*) DESC
-      ) AS stresslevel
+            CAST(ROUND(AVG(r.HR), 0) AS INT) AS avg_hr,
 
-    FROM Session s
-    JOIN Reports r ON r.sessionid = s.sessionid
-    WHERE s.sid = ?
-    GROUP BY s.sessionid, s.endtime
-    ORDER BY s.endtime ASC;
+            CAST(ROUND(AVG(r.SDNN), 0) AS INT) AS avg_sdnn,
 
-       
+            -- Most common stress level
+            (
+                SELECT TOP 1 r2.stresslevel
+                FROM Reports r2
+                WHERE r2.sessionid = s.sessionid
+                GROUP BY r2.stresslevel
+                ORDER BY COUNT(*) DESC
+            ) AS stresslevel
 
+        FROM Session s
+        JOIN Reports r ON r.sessionid = s.sessionid
 
+        WHERE s.sid = ?
+
+        GROUP BY s.sessionid, s.endtime
+
+        ORDER BY s.endtime DESC
         """,
         (sid,),
     )
@@ -73,10 +73,9 @@ def get_student_reports(sid):
     return jsonify(
         [
             {
-
                 "sessionId": r[0],
                 "date": r[1],
-                "afterQuestionBP": r[2] ,
+                "afterQuestionBP": r[2],
                 "heartRate": r[3],
                 "sdnn": r[4],
                 "stressLevel": r[5],
@@ -84,7 +83,6 @@ def get_student_reports(sid):
             for r in rows
         ]
     ), 200
-
 
 # ----------------  2 Get Top 5 Recent Reports By Student ID Student side ----------------
 @report_bp.route("/sessiontop5/<int:sid>", methods=["GET"])
@@ -94,39 +92,39 @@ def get_student_reports_top5(sid):
 
     cursor.execute(
         """ 
-                SELECT 
-                top 5
-                s.sessionid,
-                CONVERT(VARCHAR, s.endtime, 23) AS date,
+        SELECT TOP 5
+            s.sessionid,
 
-                CONCAT(
-                    CAST(AVG(r.AfterQuestionsys) AS INT),
-                    '/',
-                    CAST(AVG(r.AfterQuestionDIA) AS INT)
-                ) AS bp,
+            CONVERT(VARCHAR, s.endtime, 120) AS datetime,
 
-                AVG(r.HR)   AS avg_hr,
-                AVG(r.SDNN) AS avg_sdnn,
+            CONCAT(
+                CAST(ROUND(AVG(r.AfterQuestionsys), 0) AS INT),
+                '/',
+                CAST(ROUND(AVG(r.AfterQuestionDIA), 0) AS INT)
+            ) AS bp,
 
-                -- Most common stress level in session
-                (
-                 SELECT TOP 1 r2.stresslevel
-                   FROM Reports r2
-                    WHERE r2.sessionid = s.sessionid   -- ✅ FIX
-                    GROUP BY r2.stresslevel
-                    ORDER BY COUNT(*) DESC
-              ) AS stresslevel
+            CAST(ROUND(AVG(r.HR), 0) AS INT) AS avg_hr,
 
-            FROM Session s
-            JOIN Reports r ON r.sessionid = s.sessionid
-            WHERE s.sid = ?
-            GROUP BY s.sessionid, s.endtime
-            ORDER BY s.endtime ASC;
+            CAST(ROUND(AVG(r.SDNN), 0) AS INT) AS avg_sdnn,
 
+            -- Most common stress level
+            (
+                SELECT TOP 1 r2.stresslevel
+                FROM Reports r2
+                WHERE r2.sessionid = s.sessionid
+                GROUP BY r2.stresslevel
+                ORDER BY COUNT(*) DESC
+            ) AS stresslevel
 
+        FROM Session s
+        JOIN Reports r ON r.sessionid = s.sessionid
 
+        WHERE s.sid = ?
 
-                """,
+        GROUP BY s.sessionid, s.endtime
+
+        ORDER BY s.endtime DESC
+        """,
         (sid,),
     )
 
@@ -139,7 +137,6 @@ def get_student_reports_top5(sid):
     return jsonify(
         [
             {
-
                 "sessionId": r[0],
                 "date": r[1],
                 "afterQuestionBP": r[2],
@@ -187,7 +184,6 @@ def get_question_for_student_easy(sid):
         return jsonify({"message": "No new question available for this student"}), 404
 
 
-
 # ---------------- 4 Get Unattempted Question For Student  hard  Student side ----------------
 @report_bp.route("/unattemptedhard/<int:sid>", methods=["GET"])
 def get_question_for_student_hard(sid):
@@ -223,7 +219,6 @@ def get_question_for_student_hard(sid):
         return jsonify({"message": "No new question available for this student"}), 404
 
 
-
 # ----------------  5 Get Unattempted Question For Student  Medium  Student side----------------
 @report_bp.route("/unattemptedmedium/<int:sid>", methods=["GET"])
 def get_question_for_student(sid):
@@ -257,9 +252,6 @@ def get_question_for_student(sid):
         }), 200
     else:
         return jsonify({"message": "No new question available for this student"}), 404
-
-
-
 
 
 # ---------------- 6 Question  Report By QID admin side ----------------
@@ -315,12 +307,10 @@ def question_report(qid):
         "avg_sdnn": row[6],
         "avg_rmssd": row[7],
         "avg_si": row[8],
-        "most_common_stress_level":row[9],
+        "most_common_stress_level": row[9],
     }
 
     return jsonify(response), 200
-
-
 
 
 # ---------------- 7  Student Session Report Student side ----------------
@@ -422,7 +412,6 @@ def student_session_report(sid, sessionid):
     }), 200
 
 
-
 # ---------------- 8 Student Question Report student side   ----------------
 @report_bp.route("/student_question_report/<int:sid>/<int:qid>", methods=["GET"])
 def student_question_report(sid, qid):
@@ -455,10 +444,22 @@ def student_question_report(sid, qid):
 
     cursor.execute(query, (qid, sid))
     row = cursor.fetchone()
+
+    #####################################
+    query = """
+        SELECT gptindex , Answers
+        FROM QuestionAttempt 
+        WHERE sid = ? AND qid = ?
+    """
+    cursor.execute(query, (sid, qid))
+    gptindex = cursor.fetchone()
+
     conn.close()
 
     if not row:
         return jsonify({"message": "No report found for this student and question"}), 404
+    if not gptindex:
+        return jsonify({"message": "No gptindex found for this student and question"}), 404
 
     return jsonify({
         "question_id": qid,
@@ -469,7 +470,9 @@ def student_question_report(sid, qid):
         "SDNN": row[4],
         "RMSSD": row[5],
         "SI": row[6],
-        "stress_level": row[7]
+        "stress_level": row[7],
+        "gptindex": gptindex[0],
+        "Answers": gptindex[1]
     }), 200
 
 
@@ -641,8 +644,7 @@ def qus_rep_admin(qid):
     return jsonify(response), 200
 
 
-
-# ---------------- DELETE SESSION (Safe Delete) ----------------
+# ----------------  10 DELETE SESSION (Safe Delete) ----------------
 @report_bp.route("/delete_session/<int:sessionid>", methods=["DELETE"])
 def delete_session(sessionid):
     conn = get_db_connection()
@@ -657,7 +659,7 @@ def delete_session(sessionid):
             conn.close()
             return jsonify({
                 "message": "Session not found, nothing deleted"
-            }), 200   # ❗ no error
+            }), 200  # ❗ no error
 
         # ✅ Delete from child tables first (important)
         cursor.execute("DELETE FROM Reports WHERE sessionid = ?", (sessionid,))
@@ -682,3 +684,35 @@ def delete_session(sessionid):
         }), 500
 
 
+# ---------------- 11 Get Self Report By Session ----------------
+@report_bp.route("/selfreport/<int:sessionid>", methods=["GET"])
+def get_self_report(sessionid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+            SELECT MentalLoad, Frustration, Effort, Comment
+            FROM Session
+            WHERE sessionid = ?
+        """
+
+        cursor.execute(query, (sessionid,))
+        row = cursor.fetchone()
+
+        conn.close()
+
+        if not row:
+            return jsonify({"message": "No data found for this session"}), 404
+
+        return jsonify({
+            "sessionId": sessionid,
+            "mentalLoad": row[0],
+            "frustration": row[1],
+            "effort": row[2],
+            "comment": row[3]
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500

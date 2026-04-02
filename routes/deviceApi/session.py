@@ -247,17 +247,26 @@ def start_recording():
         baseline_dia
     ))
 
-    # # ==========================================
-    # # increment question count
-    # # ==========================================
-    # cursor.execute("""
-    #        UPDATE Question
-    #        SET count = 3
-    #        WHERE qid = ? ;
-    #    """, (
-    #     qid,
-    #
-    # ))
+
+
+    # read question count
+    cursor.execute("""  
+        SELECT count FROM Question WHERE qid=? 
+    """, (qid,))
+
+    result = cursor.fetchone()
+
+    if result is not None:
+        count = result[0]  # tuple se value nikalo
+        count += 1
+
+        # increment question count
+        cursor.execute("""
+            UPDATE Question
+            SET count = ?
+            WHERE qid = ?;
+        """, (count, qid))
+
 
     conn.commit()
     conn.close()
