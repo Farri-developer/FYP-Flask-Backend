@@ -9,6 +9,7 @@ eeg_api = Blueprint("eeg_api", __name__)
 
 # ==========================
 # Optimized Settings
+#  Show the graph
 # ==========================
 
 FS = 256

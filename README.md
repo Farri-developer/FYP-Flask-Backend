@@ -1,134 +1,254 @@
-# Student Stress Monitoring System (API-Based Backend)
+# 🧠 Multimodal Stress Detection System (AI + Flask Backend)
 
-## 📄 Overview
+A **research-grade full-stack system** that combines:
 
-Ye project **Student Stress Monitoring System** ka backend hai, jo **Flask REST APIs** aur **SQL Server** par based hai.  
-System students ke physiological signals (EEG, PPG, BP) ko record karta hai, un par signal processing apply karta hai, aur per question / per session stress reports generate karta hai.
+- 🧠 EEG Signals  
+- ❤️ PPG Signals  
+- 🩺 Blood Pressure  
+- 📋 NASA-TLX (Self Report)  
 
-**Key Features:**
-- Mobile App / Frontend (React Native) ke liye API data provide karta hai
-- Student performance aur stress history track karta hai
-- Real-time & historical analysis support karta hai
-
----
-
-## 🔗 Database Structure
-
-### 🗂 Tables Used by APIs
-
-| Table Name       | API Usage                                      |
-|-----------------|-----------------------------------------------|
-| Student          | Student authentication, profile, reports     |
-| Session          | Session start/end, sensor file paths         |
-| Question         | Question fetching & management               |
-| QuestionAttempt  | Student answers, time, scores                |
-| Reports          | Stress analytics & visualization             |
-
-### 🔑 Relationships
-
-- `Student → Session` (1:N)  
-- `Session → QuestionAttempt` (1:N)  
-- `Question → QuestionAttempt` (1:N)  
-- `Student → QuestionAttempt` (1:N)  
-- `Session → Reports` (1:N)  
-- `Question → Reports` (1:N)  
-- `Student → Reports` (1:N)  
-
-✔ APIs foreign key constraints ko follow karti hain  
-✔ `ON DELETE CASCADE` se orphan data avoid hota hai  
+to **detect human stress levels** using **Machine Learning + Flask APIs**.
 
 ---
 
-## 🧠 API-Based System Flow
+## 📌 Project Overview
 
-### 1. Student Authentication API
-- Registration number + password verify hota hai
-- Student ID (sid) frontend ko return hoti hai
+This system provides a **complete pipeline**:
 
-### 2. Session Management APIs
-- **Session Start API:** New session create hoti hai, startTime store hota hai
-- **Session End API:** endTime update hota hai, self-report save hota hai
-
-### 3. Sensor Data APIs
-- EEG, PPG, BP signals record hotay hain
-- File paths database mein store hotay hain
-- Raw data Flask APIs se process hota hai
-
-### 4. Question Handling APIs
-- Student ke liye unattempted question fetch hota hai
-- `QuestionAttempt` table update hoti hai (time, answer, scores)
-
-### 5. Signal Processing APIs
-- EEG, PPG, BP signals se features extract hotay hain
-- Processing Python libraries (NumPy, Pandas) se hoti hai
-
-### 6. Stress Calculation APIs
-- Stress Score calculate hota hai (0–100)
-- Stress Level assign hota hai: **Low / Medium / High**
-
-### 7. Report Generation APIs
-- Per question report  
-- Per session report  
-- Student-wise stress history
-
-### 8. Visualization APIs
-- EEG Alpha band combined graph  
-- Stress trends over time  
-- Question-wise stress analysis  
+- 📡 Real-time biosignal acquisition  
+- 🧪 Dataset generation (feature engineering)  
+- 🤖 Machine learning model training  
+- 🌐 Flask backend APIs  
+- 📊 Stress prediction & reporting  
 
 ---
 
-## 🧪 Extracted Features
+## 🗂️ Project Structure
 
-| Signal | Features       |
-|--------|----------------|
-| PPG    | HR, SDNN, RMSSD|
-| BP     | SYS, DYS       |
-| EEG    | CL, RI, SI     |
 
-✔ Features APIs ke through calculate aur `Reports` table mein save hotay hain  
+FYP-Flask-Backend/
+
+│
+├── app.py
+
+├── routes/
+
+│ ├── deviceApi/
+
+│ │ ├── eeg_api.py
+
+│ │ ├── Model.py
+
+│ │ ├── session.py
+
+│ ├── question_routes.py
+
+│ ├── student_routes.py
+
+│ ├── report_routes.py
+
+│ ├── admin_routes.py
+
+│ ├── EEG_PPG.py
+
+│
+├── database/
+
+├── Data/
+
+│ └── stress_model_random_forest.pkl
+
+│
+└── README.md
+
 
 ---
 
-## 🟢 Normalization
+## ⚙️ Technologies Used
 
-- **1NF** – Atomic fields  
-- **2NF** – Full functional dependency  
-- **3NF** – Controlled redundancy  
-
-✔ APIs sirf normalized data access karti hain  
+- Python  
+- Flask (Backend APIs)  
+- PySide6 (GUI)  
+- NumPy / Pandas  
+- SciPy (Signal Processing)  
+- Scikit-learn (Machine Learning)  
+- Joblib  
+- Muse LSL (EEG + PPG Streaming)  
+- Bleak (Bluetooth BP Device)  
+- SQL Server / pyodbc  
 
 ---
 
-## ⚙️ Backend Setup
+## 🧩 System Workflow
 
-### 📦 Install Dependencies
+### 1️⃣ Data Acquisition (Devices API)
+
+📄 File: :contentReference[oaicite:0]{index=0}  
+
+- Start EEG + PPG stream  
+- Capture Blood Pressure  
+- Record session data  
+
+#### APIs:
+- `/start_stream`
+- `/start_session_bp`
+- `/start_recording`
+- `/stop_recording`
+- `/after_question_bp`
+- `/stop_stream`
+- `/selfreport`
+
+---
+
+### 2️⃣ EEG Processing API
+
+📄 File: :contentReference[oaicite:1]{index=1}  
+
+Provides EEG band power analysis:
+
+#### APIs:
+- `/delta`
+- `/theta`
+- `/alpha`
+- `/beta`
+- `/gamma`
+- `/all`
+
+#### Features:
+- Sliding window processing  
+- Band power extraction  
+- Smoothed signals for frontend  
+
+---
+
+### 3️⃣ AI Model Prediction API
+
+📄 File: :contentReference[oaicite:2]{index=2}  
+
+Predicts stress level using trained ML model.
+
+#### API:
+
+GET /predict_session/<session_id>
+
+
+#### Features:
+- EEG + PPG + BP feature extraction  
+- Window-based prediction  
+- Majority voting  
+- Database update  
+
+---
+
+### 4️⃣ Question Management APIs
+
+- Add / Update / Delete Questions  
+- Fetch questions  
+
+#### APIs:
+- `/question/getall`
+- `/question/insert`
+- `/question/update/<id>`
+- `/question/delete/<id>`
+
+---
+
+### 5️⃣ Student Management APIs
+
+- Add / Update / Delete Students  
+- Get student info  
+
+#### APIs:
+- `/student/getall`
+- `/student/getbyid/<id>`
+- `/student/insert`
+- `/student/update/<id>`
+- `/student/delete/<id>`
+
+---
+
+### 6️⃣ Reports & Analytics APIs
+
+📄 File: :contentReference[oaicite:3]{index=3}  
+
+#### Features:
+- Session reports  
+- Stress analysis  
+- Question performance  
+- GPT vs Non-GPT comparison  
+
+#### APIs:
+- `/report/allsession/<sid>`
+- `/report/sessiontop5/<sid>`
+- `/report/reportbyqid/<qid>`
+- `/report/student_session_report/<sid>/<sessionid>`
+- `/report/student_question_report/<sid>/<qid>`
+- `/report/delete_session/<sessionid>`
+- `/report/selfreport/<sessionid>`
+
+---
+
+## 🧠 Stress Levels
+
+| Label | Meaning        |
+|------|--------------|
+| 0    | Low Stress   |
+| 1    | Medium Stress|
+| 2    | High Stress  |
+
+---
+
+## 🚀 How to Run Backend
+
+### Step 1: Install Dependencies
+
 ```bash
-pip install flask pyodbc pandas numpy
-🗄 Database Setup
-SQL Server install karein
-
-Database create karein:
-
-sql
-Copy code
-CREATE DATABASE Update_Database;
-Tables SQL script se create karein
-
-db.py mein credentials update karein
-
-▶️ Run Flask Server
-bash
-Copy code
+pip install flask numpy pandas scipy scikit-learn joblib pyodbc bleak pylsl
+Step 2: Run Server
 python app.py
-🔌 API Endpoints
-Endpoint	Method	Description
-/student/getall	GET	Get all students
-/student/getbyid/<sid>	GET	Get student profile
-/student/allreports/<sid>	GET	Student stress history
-/student/reportstop5/<sid>	GET	Last 5 reports
-/question/getall	GET	Get all questions
-/question/insert	POST	Add new question
-/unattemptedforsid/<sid>	GET	Get one unattempted question
-/reportbyqid/<qid>	GET	Aggregated stress report
-/eeg/alpha/combined	GET	EEG Alpha visualization
+Step 3: API Base URL
+http://127.0.0.1:5000/
+📊 Key Features
+✅ Real-time EEG + PPG streaming
+✅ Blood pressure integration
+✅ Machine learning prediction
+✅ RESTful APIs
+✅ Database integration
+✅ Session-based tracking
+✅ Advanced analytics
+🔬 Research Contribution
+Combines physiological + self-report data
+Uses multimodal fusion approach
+Provides real-time stress monitoring
+Includes AI-based prediction + analytics dashboard
+⚠️ Limitations
+Requires Muse device
+Requires BP device
+Needs controlled environment
+📌 Future Work
+Deep Learning (LSTM / CNN)
+Mobile App Integration
+Cloud Deployment
+Real-time Dashboard
+🎓 Final Year Project
+
+Multimodal Stress Detection System
+
+👨‍💻 Developed By: Waleed Ahmed
+🏫 University: Your University Name
+📅 Year: 2026
+
+
+---
+
+🔥 This is now:
+- **Professional GitHub README**
+- **Backend + AI + APIs documented**
+- **Perfect for FYP submission**
+
+---
+
+If you want next level:
+- I can add **API documentation (Swagger style)**
+- Or **Frontend integration guide**
+- Or **Deployment (Render / AWS / VPS)**

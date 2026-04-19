@@ -8,6 +8,11 @@ from database.db import get_db_connection
 from scipy.signal import butter, filtfilt, welch, find_peaks
 
 Model = Blueprint('Model', __name__)
+
+#  only one api in this file to predict the stress level of a session based on the latest model and update the database with the results
+
+#  url is /api/devices/Model/predict_session/<session_id>
+
 # r"D:\Path\AIModel\stress_model_random_forest.pkl"
 MODEL_PATH = r"C:\Users\Farhan Ayub\Desktop\Final Year Project\FYP-Flask-Backend\Data\stress_model_random_forest.pkl"
 model = joblib.load(MODEL_PATH)
@@ -82,7 +87,7 @@ from database.db import get_db_connection
 from scipy.signal import butter, filtfilt, welch, find_peaks
 
 Model = Blueprint('Model', __name__)
-
+#  change the path according to  data/stress_model_random_forest.pkl
 MODEL_PATH = r"D:\Path\AIModel\stress_model_random_forest.pkl"
 model = joblib.load(MODEL_PATH)
 
