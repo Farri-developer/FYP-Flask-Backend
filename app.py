@@ -7,7 +7,11 @@ from routes.EEG_PPG import health_api  # << Add this
 from routes.deviceApi.session import devices_api
 from routes.deviceApi.eeg_api import eeg_api
 from  routes.deviceApi.Model import Model
+from flask_cors import CORS
+
+
 app = Flask(__name__)
+CORS(app)
 
 app.register_blueprint(student_bp, url_prefix="/api/student")
 app.register_blueprint(question_bp, url_prefix="/api/question")

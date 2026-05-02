@@ -367,12 +367,18 @@ def student_session_report(sid, sessionid):
             ) AS stresslevel,
 
             DATEDIFF(MINUTE, s.starttime, s.endtime) AS min,
+            
+            CONCAT(
+                CAST(AVG(r.BaselineSYS) AS INT),
+                '/',
+                CAST(AVG(r.BaselineDIA) AS INT)
+            ) AS bpb,
 
             CONCAT(
                 CAST(AVG(r.AfterQuestionsys) AS INT),
                 '/',
                 CAST(AVG(r.AfterQuestionDIA) AS INT)
-            ) AS bp,
+            ) AS bpa,
 
             AVG(r.HR)    AS HR,
             AVG(r.SDNN)  AS SDNN,
@@ -402,12 +408,13 @@ def student_session_report(sid, sessionid):
         "date": report_row[0],
         "final_stress_level": report_row[1],
         "total_minutes": report_row[2],
-        "average_bp": report_row[3],
-        "HR": report_row[4],
-        "SDNN": report_row[5],
-        "RMSSD": report_row[6],
-        "pNN50": report_row[7],
-        "SI": report_row[8],
+        "average_bpb": report_row[3],
+        "average_bpa": report_row[4],
+        "HR": report_row[5],
+        "SDNN": report_row[6],
+        "RMSSD": report_row[7],
+        "pNN50": report_row[8],
+        "SI": report_row[9],
         "attempted_questions": question_list
     }), 200
 
@@ -422,18 +429,29 @@ def student_question_report(sid, qid):
         SELECT TOP 1
             q.description,
             CONVERT(VARCHAR(8), r.TimeTaken, 108) AS time,
+            
+             CONCAT(
+                r.BaselineSYS,
+                '/',
+                r.BaselineDIA
+            ) AS bpf,    
+            
 
             CONCAT(
                 r.AfterQuestionsys,
                 '/',
                 r.AfterQuestionDIA
-            ) AS bp,
+            ) AS bpa,
+            
+           
+
 
             r.HR,
             r.SDNN,
             r.RMSSD,
             r.SI,
-            r.stresslevel
+            r.stresslevel,
+            r.pNN50
 
         FROM Question q
         LEFT JOIN Reports r ON q.qid = r.qid
@@ -465,12 +483,14 @@ def student_question_report(sid, qid):
         "question_id": qid,
         "description": row[0],
         "time_taken": row[1],
-        "bp": row[2],
-        "HR": row[3],
-        "SDNN": row[4],
-        "RMSSD": row[5],
-        "SI": row[6],
-        "stress_level": row[7],
+        "bpb": row[2],
+        "bpa": row[3],
+        "HR": row[4],
+        "SDNN": row[5],
+        "RMSSD": row[6],
+        "SI": row[7],
+        "stress_level": row[8],
+        "pNN50": row[9],
         "gptindex": gptindex[0],
         "Answers": gptindex[1]
     }), 200

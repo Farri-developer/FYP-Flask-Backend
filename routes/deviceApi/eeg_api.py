@@ -4,6 +4,8 @@ import numpy as np
 from scipy.signal import welch
 import os
 from database.db import get_db_connection
+import numpy as np
+from scipy.signal import find_peaks
 
 eeg_api = Blueprint("eeg_api", __name__)
 
@@ -12,13 +14,193 @@ eeg_api = Blueprint("eeg_api", __name__)
 #  Show the graph
 # ==========================
 
-FS = 256
-WINDOW_SEC = 4      # smoother
-STEP_SEC = 2        # 50% overlap
+# ==========================
+# EEG Settings
+# ==========================
+EEG_FS = 256
+EEG_WINDOW_SEC = 4
+EEG_STEP_SEC = 2
+EEG_WINDOW_SIZE = EEG_FS * EEG_WINDOW_SEC   # 1024
+EEG_STEP_SIZE = EEG_FS * EEG_STEP_SEC       # 512
 
-WINDOW_SIZE = FS * WINDOW_SEC
-STEP_SIZE = FS * STEP_SEC
+# =========================
+# PPG Settings
+# ==========================
+PPG_FS = 63
+PPG_WINDOW_SEC = 10
+PPG_STEP_SEC = 5
+PPG_WINDOW_SIZE = PPG_FS * PPG_WINDOW_SEC   # 940
+PPG_STEP_SIZE = PPG_FS * PPG_STEP_SEC       # 470
 
+
+
+
+
+# ppg fuction
+
+
+
+def load_single_ppg(sessionid, sid, qid):
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT ppgpath
+        FROM QuestionAttempt
+        WHERE sessionid = ? AND sid = ? AND qid = ?
+    """, (sessionid, sid, qid))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None, None
+
+    path = row[0]
+
+    if not path or not os.path.exists(path):
+        return None, None
+
+    df = pd.read_csv(path)
+
+    return df, path
+
+
+def compute_single_ppg(df):
+
+    channels = ["PPG1", "PPG2", "PPG3"]
+
+    ch_hr, ch_sdnn, ch_rmssd, ch_pnn50 = [], [], [], []
+
+    for ch in channels:
+        if ch not in df.columns:
+            continue
+
+        signal = df[ch].values
+
+        hr, sdnn, rmssd, pnn50 = compute_ppg_features(signal)
+
+        ch_hr.append(hr)
+        ch_sdnn.append(sdnn)
+        ch_rmssd.append(rmssd)
+        ch_pnn50.append(pnn50)
+
+    return {
+        "HR": float(np.mean(ch_hr)) if ch_hr else 0,
+        "SDNN": float(np.mean(ch_sdnn)) if ch_sdnn else 0,
+        "RMSSD": float(np.mean(ch_rmssd)) if ch_rmssd else 0,
+        "pNN50": float(np.mean(ch_pnn50)) if ch_pnn50 else 0
+    }
+
+
+def compute_ppg_features(signal):
+
+    signal = signal - np.mean(signal)
+
+    peaks, _ = find_peaks(signal, distance=PPG_FS * 0.5)  # ← PPG_FS
+
+    if len(peaks) < 2:
+        return 0, 0, 0, 0
+
+    rr = np.diff(peaks) / PPG_FS
+
+    hr = 60 / np.mean(rr)
+    sdnn = np.std(rr) * 1000
+
+    diff_rr = np.diff(rr)
+    rmssd = np.sqrt(np.mean(diff_rr**2)) * 1000
+
+    nn50 = np.sum(np.abs(diff_rr) > 0.05)
+    pnn50 = (nn50 / len(diff_rr)) * 100 if len(diff_rr) > 0 else 0
+
+    return float(hr), float(sdnn), float(rmssd), float(pnn50)
+
+
+def load_ppg_files(sessionid, sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT ppgpath
+        FROM QuestionAttempt
+        WHERE sessionid = ? AND sid = ?
+        ORDER BY QuestionAttemptID
+    """, (sessionid, sid))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return None, None
+
+    dfs = []
+    info = []
+
+    for row in rows:
+        path = row[0]
+
+        if not path or not os.path.exists(path):
+            continue
+
+        df = pd.read_csv(path)
+
+        dfs.append(df)
+        info.append({
+            "path": path,
+            "rows": len(df)
+        })
+
+    if not dfs:
+        return None, None
+
+    combined = pd.concat(dfs, ignore_index=True)
+
+    return combined, info
+
+def compute_ppg_windows(df):
+
+    channels = ["PPG1", "PPG2", "PPG3"]
+
+    time_axis = []
+    hr_list, sdnn_list, rmssd_list, pnn50_list = [], [], [], []
+
+    t = 0
+
+    for start in range(0, len(df) - PPG_WINDOW_SIZE + 1, PPG_STEP_SIZE):
+        window = df.iloc[start:start + PPG_WINDOW_SIZE]
+
+        ch_hr, ch_sdnn, ch_rmssd, ch_pnn50 = [], [], [], []
+
+        for ch in channels:
+            if ch not in df.columns:
+                continue
+
+            signal = window[ch].values
+
+            hr, sdnn, rmssd, pnn50 = compute_ppg_features(signal)
+
+            ch_hr.append(hr)
+            ch_sdnn.append(sdnn)
+            ch_rmssd.append(rmssd)
+            ch_pnn50.append(pnn50)
+
+        # average of all channels
+        if ch_hr:
+            hr_list.append(float(np.mean(ch_hr)))
+            sdnn_list.append(float(np.mean(ch_sdnn)))
+            rmssd_list.append(float(np.mean(ch_rmssd)))
+            pnn50_list.append(float(np.mean(ch_pnn50)))
+        else:
+            hr_list.append(0)
+            sdnn_list.append(0)
+            rmssd_list.append(0)
+            pnn50_list.append(0)
+
+        time_axis.append(t)
+        t += PPG_STEP_SEC
+
+    return time_axis, hr_list, sdnn_list, rmssd_list, pnn50_list
 
 # ==========================
 # Band Power
@@ -26,7 +208,7 @@ STEP_SIZE = FS * STEP_SEC
 
 def band_power(signal, band):
     signal = signal - np.mean(signal)
-    freqs, psd = welch(signal, FS, nperseg=FS)
+    freqs, psd = welch(signal, EEG_FS, nperseg=EEG_FS)  # ← EEG_FS
 
     idx = (freqs >= band[0]) & (freqs <= band[1])
     if not np.any(idx):
@@ -35,10 +217,9 @@ def band_power(signal, band):
     power = np.trapz(psd[idx], freqs[idx])
     return float(np.log10(power + 1))
 
-
-def moving_average(arr, n=5):   # stronger smoothing
+def moving_average(arr, n=5):
     if len(arr) < n:
-        return arr
+        return np.array(arr)   # ✅ ALWAYS numpy
     return np.convolve(arr, np.ones(n)/n, mode='same')
 
 
@@ -142,9 +323,8 @@ def compute_all_bands(df):
     time_axis = []
 
     t = 0
-    for start in range(0, len(df) - WINDOW_SIZE + 1, STEP_SIZE):
-
-        window_data = df.iloc[start:start + WINDOW_SIZE]
+    for start in range(0, len(df) - EEG_WINDOW_SIZE + 1, EEG_STEP_SIZE):
+        window_data = df.iloc[start:start + EEG_WINDOW_SIZE]
         band_values = {key: [] for key in bands_def.keys()}
 
         for ch in channels:
@@ -167,7 +347,7 @@ def compute_all_bands(df):
                 result[band_name].append(0.0)
 
         time_axis.append(t)
-        t += STEP_SEC
+        t += EEG_STEP_SEC
 
     # Smooth for frontend
     for band_name in result.keys():
@@ -184,9 +364,8 @@ def compute_single_band(df, band_range):
     time_axis = []
 
     t = 0
-    for start in range(0, len(df) - WINDOW_SIZE + 1, STEP_SIZE):
-
-        window_data = df.iloc[start:start + WINDOW_SIZE]
+    for start in range(0, len(df) - EEG_WINDOW_SIZE + 1, EEG_STEP_SIZE):
+        window_data = df.iloc[start:start + EEG_WINDOW_SIZE]
         ch_values = []
 
         for ch in channels:
@@ -202,7 +381,7 @@ def compute_single_band(df, band_range):
             band_values.append(0.0)
 
         time_axis.append(t)
-        t += STEP_SEC
+        t += EEG_STEP_SEC
 
     band_values = moving_average(band_values, 5).tolist()
 
@@ -392,4 +571,67 @@ def eeg_gamma():
         "file": {"path": path, "rows": len(df)},
         "time": time_axis,
         "gamma": values
+    })
+
+
+
+# ppg api fuction
+@eeg_api.route("/allp", methods=["GET"])
+def ppg_all():
+
+    sessionid = request.args.get("sessionid")
+    sid = request.args.get("sid")
+
+    df, info = load_ppg_files(sessionid, sid)
+
+    if df is None:
+        return jsonify({"error": "No PPG files found"}), 404
+
+    time, hr, sdnn, rmssd, pnn50 = compute_ppg_windows(df)
+
+    return jsonify({
+        "sessionid": sessionid,
+        "sid": sid,
+        "time": time,
+        "HR": hr,
+        "SDNN": sdnn,
+        "RMSSD": rmssd,
+        "pNN50": pnn50,
+        "files": info,
+        "total_files": len(info)
+    })
+
+
+
+@eeg_api.route("/single", methods=["GET"])
+def ppg_single():
+
+    sessionid = request.args.get("sessionid")
+    sid = request.args.get("sid")
+    qid = request.args.get("qid")
+
+    if not sessionid or not sid or not qid:
+        return jsonify({"error": "sessionid, sid, qid required"}), 400
+
+    df, path = load_single_ppg(sessionid, sid, qid)
+
+    if df is None:
+        return jsonify({"error": "PPG file not found"}), 404
+
+    # 🔥 SAME LOGIC AS /all
+    time, hr, sdnn, rmssd, pnn50 = compute_ppg_windows(df)
+
+    return jsonify({
+        "sessionid": sessionid,
+        "sid": sid,
+        "qid": qid,
+        "file": {
+            "path": path,
+            "rows": len(df)
+        },
+        "time": time,
+        "HR": hr,
+        "SDNN": sdnn,
+        "RMSSD": rmssd,
+        "pNN50": pnn50
     })
