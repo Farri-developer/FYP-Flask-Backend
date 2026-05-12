@@ -14,6 +14,8 @@ eeg_api = Blueprint("eeg_api", __name__)
 #  Show the graph
 # ==========================
 
+# BP REPORT API
+
 # ==========================
 # EEG Settings
 # ==========================
@@ -635,3 +637,273 @@ def ppg_single():
         "RMSSD": rmssd,
         "pNN50": pnn50
     })
+
+
+
+
+
+
+#  Task Work
+
+
+# ==========================
+# BP REPORT API
+# ==========================
+
+@eeg_api.route("/bp-report", methods=["GET"])
+def bp_report():
+
+    sessionid = request.args.get("sessionid")
+    sid = request.args.get("sid")
+
+    if not sessionid or not sid:
+        return jsonify({
+            "error": "sessionid and sid required"
+        }), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                ReportID,
+
+                BaselineSYS,
+                BaselineDIA,
+
+                MidSYS,
+                MidDIA,
+
+                AfterQuestionSYS,
+                AfterQuestionDIA
+
+            FROM Reports
+            WHERE sessionid = ? AND sid = ?
+            ORDER BY ReportID ASC
+        """, (sessionid, sid))
+
+        rows = cursor.fetchall()
+
+        conn.close()
+
+        if not rows:
+            return jsonify({
+                "message": "No BP report found",
+                "data": []
+            }), 404
+
+        result = []
+
+        for row in rows[:3]:   # max 3 rows
+
+            result.append({
+
+                "ReportID": row[0],
+
+                "Baseline": {
+                    "SYS": row[1],
+                    "DIA": row[2]
+                },
+
+                "Mid": {
+                    "SYS": row[3],
+                    "DIA": row[4]
+                },
+
+                "AfterQuestion": {
+                    "SYS": row[5],
+                    "DIA": row[6]
+                }
+
+            })
+
+        return jsonify({
+            "sessionid": sessionid,
+            "sid": sid,
+            "total_rows": len(result),
+            "reports": result
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+
+# =========================================================
+# COMBINED EEG + BP API (QUESTION WISE)
+# =========================================================
+
+@eeg_api.route("/combined-question-report", methods=["GET"])
+def combined_question_report():
+
+    sessionid = request.args.get("sessionid")
+    sid = request.args.get("sid")
+
+    if not sessionid or not sid:
+        return jsonify({
+            "error": "sessionid and sid required"
+        }), 400
+
+    try:
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # =====================================================
+        # GET ALL QUESTIONS
+        # =====================================================
+
+        cursor.execute("""
+            SELECT
+                qa.qid,
+                qa.eegpath,
+
+                r.BaselineSYS,
+                r.BaselineDIA,
+
+                r.MidSYS,
+                r.MidDIA,
+
+                r.AfterQuestionSYS,
+                r.AfterQuestionDIA
+
+            FROM QuestionAttempt qa
+
+            LEFT JOIN Reports r
+                ON qa.sessionid = r.sessionid
+                AND qa.sid = r.sid
+
+            WHERE qa.sessionid = ?
+            AND qa.sid = ?
+
+            ORDER BY qa.QuestionAttemptID ASC
+        """, (sessionid, sid))
+
+        rows = cursor.fetchall()
+
+        conn.close()
+
+        if not rows:
+            return jsonify({
+                "error": "No question data found"
+            }), 404
+
+        final_response = []
+
+        # =====================================================
+        # LOOP EACH QUESTION
+        # =====================================================
+
+        for row in rows:
+
+            qid = row[0]
+            eegpath = row[1]
+
+            baseline_sys = row[2]
+            baseline_dia = row[3]
+
+            mid_sys = row[4]
+            mid_dia = row[5]
+
+            end_sys = row[6]
+            end_dia = row[7]
+
+            # =================================================
+            # LOAD EEG FILE
+            # =================================================
+
+            eeg_graph = {}
+
+            if eegpath and os.path.exists(eegpath):
+
+                df = pd.read_csv(eegpath)
+
+                time_axis, bands = compute_all_bands(df)
+
+                eeg_graph = {
+                    "time": time_axis,
+                    "delta": bands["delta"],
+                    "theta": bands["theta"],
+                    "alpha": bands["alpha"],
+                    "beta": bands["beta"],
+                    "gamma": bands["gamma"]
+                }
+
+            # =================================================
+            # BP SECTION
+            # =================================================
+
+            bp_section = []
+
+            # START BP
+            if baseline_sys is not None:
+
+                bp_section.append({
+                    "type": "START_BP",
+                    "minute": 0,
+                    "SYS": baseline_sys,
+                    "DIA": baseline_dia
+                })
+
+            # MID BP (ONLY IF EXISTS)
+            if mid_sys is not None:
+
+                bp_section.append({
+                    "type": "MID_BP",
+                    "minute": 5,
+                    "SYS": mid_sys,
+                    "DIA": mid_dia
+                })
+
+            # END BP
+            if end_sys is not None:
+
+                bp_section.append({
+                    "type": "END_BP",
+                    "minute": 10,
+                    "SYS": end_sys,
+                    "DIA": end_dia
+                })
+
+            # =================================================
+            # FINAL QUESTION OBJECT
+            # =================================================
+
+            final_response.append({
+
+                "qid": qid,
+
+                # -----------------------------------------
+                # BP DATA
+                # -----------------------------------------
+                "bp": bp_section,
+
+                # -----------------------------------------
+                # EEG GRAPH
+                # -----------------------------------------
+                "eeg": eeg_graph
+
+            })
+
+        # =====================================================
+        # FINAL RETURN
+        # =====================================================
+
+        return jsonify({
+
+            "sessionid": sessionid,
+            "sid": sid,
+            "total_questions": len(final_response),
+
+            "questions": final_response
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        }), 500

@@ -379,6 +379,12 @@ def student_session_report(sid, sessionid):
                 '/',
                 CAST(AVG(r.AfterQuestionDIA) AS INT)
             ) AS bpa,
+            
+             CONCAT(
+                CAST(AVG(r.MidSYS) AS INT),
+                '/',
+                CAST(AVG(r.MidDIA) AS INT)
+            ) AS bpm,
 
             AVG(r.HR)    AS HR,
             AVG(r.SDNN)  AS SDNN,
@@ -410,11 +416,12 @@ def student_session_report(sid, sessionid):
         "total_minutes": report_row[2],
         "average_bpb": report_row[3],
         "average_bpa": report_row[4],
-        "HR": report_row[5],
-        "SDNN": report_row[6],
-        "RMSSD": report_row[7],
-        "pNN50": report_row[8],
-        "SI": report_row[9],
+        "average_bpm": report_row[5],
+        "HR": report_row[6],
+        "SDNN": report_row[7],
+        "RMSSD": report_row[8],
+        "pNN50": report_row[9],
+        "SI": report_row[10],
         "attempted_questions": question_list
     }), 200
 
@@ -442,6 +449,13 @@ def student_question_report(sid, qid):
                 '/',
                 r.AfterQuestionDIA
             ) AS bpa,
+            
+             CONCAT(
+                r.MidSYS,
+                '/',
+                r.MidDIA
+            ) AS bpm,
+            
             
            
 
@@ -485,12 +499,13 @@ def student_question_report(sid, qid):
         "time_taken": row[1],
         "bpb": row[2],
         "bpa": row[3],
-        "HR": row[4],
-        "SDNN": row[5],
-        "RMSSD": row[6],
-        "SI": row[7],
-        "stress_level": row[8],
-        "pNN50": row[9],
+        "bpm": row[4],
+        "HR": row[5],
+        "SDNN": row[6],
+        "RMSSD": row[7],
+        "SI": row[8],
+        "stress_level": row[9],
+        "pNN50": row[10],
         "gptindex": gptindex[0],
         "Answers": gptindex[1]
     }), 200

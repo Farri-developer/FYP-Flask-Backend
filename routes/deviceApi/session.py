@@ -647,3 +647,91 @@ def reset_all():
         return jsonify({
             "error": str(e)
         }), 500
+
+
+# =====================================================
+# MID QUESTION BP (DURING RECORDING)
+# =====================================================
+@devices_api.route("/mid_question_bp", methods=["POST"])
+def mid_question_bp():
+    global question_start_time
+    global current_question_attempt_id
+    global baseline_sys, baseline_dia, baseline_pulse
+    global bp_csv_path
+
+    # Active question check
+    if not current_question_attempt_id:
+        return jsonify({"error": "No active question attempt"}), 400
+
+    if not bp_csv_path:
+        return jsonify({"error": "BP file not initialized"}), 400
+
+    if baseline_sys is None:
+        return jsonify({"error": "Baseline not captured"}), 400
+
+    # BP Read
+    try:
+        result = read_bp()
+    except Exception as e:
+        return jsonify({"error": f"BP read failed: {str(e)}"}), 500
+
+    mid_sys  = result["SYS"]
+    mid_dia  = result["DIA"]
+    mid_pulse = result["PULSE"]
+
+    mid_time = datetime.now()
+
+    # Time elapsed since question started
+    time_elapsed = int((mid_time - question_start_time).total_seconds()) if question_start_time else None
+
+    # Delta from baseline
+    delta_sys   = mid_sys  - baseline_sys
+    delta_dia   = mid_dia  - baseline_dia
+    delta_pulse = mid_pulse - baseline_pulse
+
+    # ==========================================
+    # APPEND TO BP CSV FILE
+    # ==========================================
+    with open(bp_csv_path, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            mid_time.strftime("%H:%M:%S"),
+            "Mid-Question",
+            mid_sys,
+            mid_dia,
+            mid_pulse,
+            delta_sys,
+            delta_dia,
+            delta_pulse
+        ])
+
+    # ==========================================
+    # UPDATE DATABASE (Reports table)
+    # ==========================================
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE Reports
+        SET MidSYS = ?,
+            MidDIA = ?
+        WHERE QuestionAttemptID = ?
+    """, (
+        mid_sys,
+        mid_dia,
+        current_question_attempt_id
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "status": "mid question BP saved",
+        "SYS":        mid_sys,
+        "DIA":        mid_dia,
+        "PULSE":      mid_pulse,
+        "DeltaSYS":   delta_sys,
+        "DeltaDIA":   delta_dia,
+        "DeltaPulse": delta_pulse,
+        "TimeElapsed": time_elapsed
+    }), 200

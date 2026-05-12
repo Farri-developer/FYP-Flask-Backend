@@ -77,14 +77,14 @@ def update_question(qid):
         UPDATE Question
         SET description = ?,
             duration = ?,
-            questionlevel = ?,
-            count = ?
+            questionlevel = ?
+            
         WHERE qid = ?
     """, (
         data["description"],
         data["duration"],
         data.get("questionlevel"),
-        data.get("count", 0),
+        # data.get("count", 0),
         qid
     ))
 

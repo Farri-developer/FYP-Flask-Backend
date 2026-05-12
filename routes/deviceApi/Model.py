@@ -267,7 +267,7 @@ def predict_session(session_id):
                     pidx = class_list.index(pred)
                     window_breakdown.append({
                         "window":     i + 1,
-                        "label":      pred,
+                        "label":      int(pred),
                         "confidence": round(float(prob_row[pidx]) * 100, 2)
                     })
 
@@ -282,12 +282,12 @@ def predict_session(session_id):
                 cursor.execute("""
                     UPDATE Reports
                     SET HR=?, SDNN=?, RMSSD=?, pNN50=?, SI=?,
-                        stresslevel=?, stressscore=?
+                        stresslevel=?
                     WHERE QuestionAttemptID=? AND sessionid=?
                 """, (
                     avg_hr, avg_sdnn, avg_rmssd, avg_pnn50, avg_si,
                     str(final_label),
-                    final_score,
+
                     qa_id,
                     session_id
                 ))
@@ -297,7 +297,7 @@ def predict_session(session_id):
                 results.append({
                     "question_attempt_id": qa_id,
                     "status":              "success",
-                    "stress_label":        final_label,
+                    "stress_label": int(final_label),
                     "stress_score":        final_score,
                     "hrv": {
                         "HR":    avg_hr,
